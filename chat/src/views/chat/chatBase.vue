@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // ============== 组件导入 ==============
 import { fetchChatAPIProcess } from '@/api'
-import { fetchQueryOneCatAPI } from '@/api/appStore'
+import { fetchQueryOneAgentAPI } from '@/api/agent'
 import { openImageViewer } from '@/components/common/ImageViewer/useImageViewer'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
@@ -161,7 +161,7 @@ const activeModelAvatar = computed(() => {
   return String(usingPlugin?.value?.pluginImg || configObj?.value.modelInfo?.modelAvatar || '')
 })
 
-/* 当前对话组是否是应用 */
+/* 当前对话组是否是 Agent */
 const activeAppId = computed(() => activeGroupInfo?.value?.appId || 0)
 
 // ============== 弹窗相关计算属性 ==============
@@ -305,7 +305,7 @@ function handleModalClose() {
 
 async function handleModalSkip(app: any) {
   showFormModal.value = false
-  // 直接执行应用，不带数据
+  // 直接执行 Agent，不带数据
   await handleAppExecution(app)
 }
 
@@ -1196,7 +1196,7 @@ async function handleClick(box: { appId?: number; prompt: any }) {
 
 // ============== 方法定义 ==============
 
-// Toggle AppList visibility
+// Toggle Agent workspace visibility
 const toggleAppList = () => {
   useGlobalStore.updateShowAppListComponent(!useGlobalStore.showAppListComponent)
 }
@@ -1206,20 +1206,20 @@ const toggleTextEditor = () => {
   useGlobalStore.updateTextEditor(!useGlobalStore.showTextEditor)
 }
 
-// Handle the 'run-app' event from AppList
+// Handle the 'run-app' event from Agent workspace
 async function handleRunAppFromList(app: any) {
-  showAppListComponent.value = false // Hide AppList
+  showAppListComponent.value = false // Hide Agent workspace
   await chatStore.addNewChatGroup(Number(app.id))
-  // No need to check membership here, AppList handled it
+  // No need to check membership here, Agent workspace handled it
 }
 
-// Handle the 'show-member-dialog' event from AppList
+// Handle the 'show-member-dialog' event from Agent workspace
 function handleShowMemberDialogFromList() {
-  useGlobalStore.updateShowAppListComponent(false) // Hide AppList
+  useGlobalStore.updateShowAppListComponent(false) // Hide Agent workspace
   useGlobalStore.updateSettingsDialog(true, DIALOG_TABS.MEMBER)
 }
 
-// Handle the 'run-app-with-data' event from AppList (via Modal)
+// Handle the 'run-app-with-data' event from Agent workspace (via Modal)
 async function handleRunAppWithData({ app, formattedData }: { app: any; formattedData: string }) {
   // Ensure AppList is hidden (might already be hidden by modal logic)
   useGlobalStore.updateShowAppListComponent(false)
@@ -1249,7 +1249,7 @@ async function handleRunAppWithData({ app, formattedData }: { app: any; formatte
 async function fetchCurrentAppDetail(appId: number) {
   if (!appId) return
   try {
-    const res: any = await fetchQueryOneCatAPI({ id: appId })
+    const res: any = await fetchQueryOneAgentAPI({ id: appId })
     currentAppDetail.value = res.data
   } catch (error) {
     console.error('Error fetching app details:', error)
@@ -1476,7 +1476,7 @@ provide('tryParseJson', tryParseJson)
       </template>
     </div>
 
-    <!-- 通用应用配置弹窗 -->
+    <!-- 通用 Agent 配置弹窗 -->
     <transition name="modal-fade">
       <!-- Backdrop and Centering Container -->
       <div

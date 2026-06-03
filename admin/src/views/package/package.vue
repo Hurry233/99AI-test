@@ -483,7 +483,7 @@ meta:
             </el-form-item>
           </el-col>
           <el-col :span="11">
-            <el-form-item label="App分类" prop="appCats">
+            <el-form-item label="Agent能力" prop="appCats">
               <div class="category-selector">
                 <!-- 已选择的分类 -->
                 <div class="selected-categories mb-2 min-h-[36px] flex items-center flex-wrap">

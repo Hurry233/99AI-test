@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { fetchQueryAppsAPI, fetchQueryOneCatAPI } from '@/api/appStore'
+import { fetchQueryAgentsAPI, fetchQueryOneAgentAPI, type AgentItem } from '@/api/agent'
 import type { ResData } from '@/api/types'
+import { agentPlatformFeatures } from '@/config/agentPlatform'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAuthStore, useChatStore, useGlobalStoreWithOut } from '@/store'
 import {
@@ -60,29 +61,14 @@ const extraParam = ref<{
 }>({ size: '', style: '' })
 
 const showSuggestions = ref(false)
-const selectedApp = ref()
-const isSelectedApp = ref(false)
-const appList = ref<App[]>([])
+const selectedAgent = ref<AgentItem | undefined>()
+const isSelectedAgent = ref(false)
+const agentList = ref<AgentItem[]>([])
 let searchTimeout: string | number | NodeJS.Timeout | null | undefined = null
 const fileUploadConfig = ref({
   accept: '.pdf, .txt, .doc, .docx,.ppt,.pptx, .xlsx,.xls,.csv .md, .markdown',
   multiple: true,
 })
-
-interface App {
-  id: number
-  name: string
-  des: string
-  coverImg: string
-  catId: number
-  appCount: number
-  demoData: string
-  backgroundImg?: string
-  prompt?: string
-  loading?: boolean
-  createdAt: string
-  updatedAt: string
-}
 
 // 双向绑定 chatStore.prompt
 const prompt = computed({
@@ -236,14 +222,14 @@ watch(
 const handleInput = async (event: KeyboardEvent) => {
   const inputElement = event.target as HTMLTextAreaElement
   const inputValue = inputElement.value
-  showSuggestions.value = inputValue.startsWith('@')
+  showSuggestions.value = agentPlatformFeatures.agentShortcutSearch && inputValue.startsWith('@')
 
   // 清除之前的定时器，如果有的话
   if (searchTimeout) {
     clearTimeout(searchTimeout)
   }
 
-  if (showSuggestions.value && !isSelectedApp.value) {
+  if (showSuggestions.value && !isSelectedAgent.value) {
     const searchTerm = inputValue.slice(1) // 去掉'@'
 
     // 使用定时器来节流搜索请求
@@ -252,8 +238,8 @@ const handleInput = async (event: KeyboardEvent) => {
         try {
           const keywordLower = searchTerm.toLowerCase()
 
-          // 根据拼音匹配过滤符合的应用
-          const filteredResults = appList.value.filter(item =>
+          // 根据拼音匹配过滤符合的 Agent
+          const filteredResults = agentList.value.filter(item =>
             PinyinMatch.match(item.name, keywordLower)
           )
 
@@ -263,8 +249,8 @@ const handleInput = async (event: KeyboardEvent) => {
           searchResults.value = []
         }
       } else {
-        // 如果关键字为空，随机选取5个结果
-        const randomResults = appList.value
+        // 如果关键字为空，随机选取 5 个 Agent
+        const randomResults = agentList.value
           .sort(() => Math.random() - 0.5) // 随机打乱顺序
           .slice(0, 5) // 取前5个
         searchResults.value = randomResults
@@ -275,13 +261,15 @@ const handleInput = async (event: KeyboardEvent) => {
   }
 }
 
-async function queryApps() {
-  const res: ResData = await fetchQueryAppsAPI()
-  appList.value = res?.data?.rows.map((item: App) => {
+async function queryAgents() {
+  if (!agentPlatformFeatures.agentShortcutSearch) return
+
+  const res: ResData = await fetchQueryAgentsAPI()
+  agentList.value = res?.data?.rows.map((item: AgentItem) => {
     item.loading = false
     return item
   })
-  // activeList.value = appList.value;
+  // agentList is used by the @ Agent shortcut suggestions.
 }
 
 const activeModelAvatar = computed(() => {
@@ -320,21 +308,21 @@ const handleSubmit = async (index?: number) => {
 
   let useModel =
     usingPlugin.value?.parameters === 'mermaid'
-      ? selectedApp?.value?.model || chatStore?.activeModel
-      : usingPlugin.value?.parameters || selectedApp?.value?.model || chatStore?.activeModel
+      ? selectedAgent?.value?.model || chatStore?.activeModel
+      : usingPlugin.value?.parameters || selectedAgent?.value?.model || chatStore?.activeModel
   let useModelName =
-    usingPlugin?.value?.pluginName || selectedApp?.value?.name || activeModelName.value
+    usingPlugin?.value?.pluginName || selectedAgent?.value?.name || activeModelName.value
 
   const useModelType =
     usingPlugin.value?.parameters && usingPlugin.value?.parameters !== 'mermaid'
       ? 2
       : activeModelKeyType.value
 
-  let modelAvatar = selectedApp?.value?.coverImg || activeModelAvatar.value
+  let modelAvatar = selectedAgent?.value?.coverImg || activeModelAvatar.value
   let appId
 
-  if (selectedApp?.value) {
-    appId = selectedApp?.value?.id
+  if (selectedAgent?.value) {
+    appId = selectedAgent?.value?.id
   } else {
     appId = activeGroupInfo?.value?.appId
   }
@@ -378,7 +366,7 @@ const handleSubmit = async (index?: number) => {
 
   if (appId) {
     try {
-      const res: any = await fetchQueryOneCatAPI({ id: appId })
+      const res: any = await fetchQueryOneAgentAPI({ id: appId })
       modelAvatar = res.data.modelAvatar
     } catch (error) {}
   }
@@ -924,11 +912,11 @@ const handleImageSelect = async (event: Event) => {
   }
 }
 
-const clearSelectApp = async () => {
+const clearSelectAgent = async () => {
   searchResults.value = []
   showSuggestions.value = false
-  isSelectedApp.value = false
-  selectedApp.value = null
+  isSelectedAgent.value = false
+  selectedAgent.value = undefined
   chatStore.setUsingPlugin(null)
 }
 
@@ -946,10 +934,10 @@ const handleEnter = (event: KeyboardEvent) => {
   }
 }
 
-const selectApp = async (app: any) => {
-  // 这里可以设置选中的应用程序的逻辑
-  selectedApp.value = app
-  isSelectedApp.value = true
+const selectAgent = async (agent: AgentItem) => {
+  // 这里可以设置选中的 Agent 逻辑
+  selectedAgent.value = agent
+  isSelectedAgent.value = true
   await chatStore.setPrompt('')
   // prompt.value = '';
   inputRef.value?.focus()
@@ -1095,38 +1083,41 @@ const placeholderText = computed(() => {
   }
 
   // 默认提示
-  return `向 ${siteName} 发消息，使用 @ 搜索应用`
+  return `向 ${siteName} 发消息，使用 @ 搜索 Agent`
 })
 
 const shouldShowNetworkSearch = computed(() => {
-  // 只检查是否支持网络搜索且没有使用插件
+  // 只检查当前模型是否支持网络搜索
   return isNetworkSearch.value
 })
 
 const shouldShowDeepThinking = computed(() => {
-  // 只检查是否支持深度思考且没有使用插件
+  // 只检查当前模型是否支持深度思考
   return isDeepThinking.value
 })
 
-// 添加流程图按钮显示控制
+// 添加图表工具按钮显示控制
 const shouldShowMermaidTool = computed(() => {
-  // 当没有使用其他插件时显示流程图按钮
-  return !usingPlugin.value || usingPlugin.value?.parameters === 'mermaid'
+  // 图表工具与 Agent 能力并列展示，不依赖旧插件市场
+  return (
+    agentPlatformFeatures.mermaidDiagramTool &&
+    (!usingPlugin.value || usingPlugin.value?.parameters === 'mermaid')
+  )
 })
 
-// 添加mermaid插件状态控制
+// 添加 Mermaid 图表工具状态控制
 const usingMermaid = computed({
   get: () => usingPlugin.value?.parameters === 'mermaid',
   set: value => {
     if (value) {
-      // 启用mermaid插件
+      // 启用 Mermaid 图表工具
       chatStore.setUsingPlugin({
         pluginName: 'Mermaid流程图',
         description: '支持Mermaid流程图的创建、编辑和查看，轻松可视化流程和关系',
         parameters: 'mermaid',
       })
     } else {
-      // 禁用mermaid插件
+      // 禁用 Mermaid 图表工具
       chatStore.setUsingPlugin(null)
     }
   },
@@ -1219,7 +1210,9 @@ onMounted(async () => {
       inputRef.value.focus()
     }
   })
-  await queryApps()
+  if (agentPlatformFeatures.agentShortcutSearch) {
+    await queryAgents()
+  }
 
   // 添加全局拖拽事件监听
   document.addEventListener('dragover', handleDocumentDragOver)
@@ -1400,7 +1393,7 @@ const shouldShowButtonText = computed(() => {
           <!-- 移除多余的内部提示层 -->
 
           <div
-            v-if="showSuggestions && !isSelectedApp && searchResults.length !== 0"
+            v-if="showSuggestions && !isSelectedAgent && searchResults.length !== 0"
             class="w-full z-50 bg-white my-2 px-1 py-1 justify-center items-center flex-col rounded-2xl resize-none dark:bg-gray-800 border border-gray-400 dark:border-gray-700"
             :style="{
               minHeight: '1.5rem',
@@ -1413,33 +1406,33 @@ const shouldShowButtonText = computed(() => {
           >
             <div
               v-if="searchResults.length !== 0"
-              v-for="app in searchResults"
-              :key="app.id"
-              @click="selectApp(app)"
+              v-for="agent in searchResults"
+              :key="agent.id"
+              @click="selectAgent(agent)"
               class="flex items-center bg-white dark:bg-gray-800 hover:bg-opacity py-2 px-2 dark:hover:bg-gray-700 rounded-2xl w-full cursor-pointer duration-150 ease-in-out"
             >
               <div
                 class="w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center overflow-hidden shadow-sm border border-gray-300 mr-3"
               >
                 <img
-                  v-if="app.coverImg"
-                  :src="app.coverImg"
-                  alt="Cover Image"
+                  v-if="agent.coverImg"
+                  :src="agent.coverImg"
+                  alt="Agent icon"
                   class="w-8 h-8 rounded-full flex justify-start"
                 />
                 <span
                   v-else
                   class="w-8 h-8 text-base font-medium text-gray-700 dark:text-gray-400 rounded-full flex items-center justify-center dark:bg-gray-700"
                 >
-                  {{ app.name.charAt(0) }}
+                  {{ agent.name.charAt(0) }}
                 </span>
               </div>
 
               <h3 class="text-md font-bold text-gray-600 dark:text-primary-500 mr-3 flex-shrink-0">
-                {{ app.name }}
+                {{ agent.name }}
               </h3>
               <p class="text-base text-gray-400 dark:text-gray-400 flex-grow truncate">
-                {{ app.des }}
+                {{ agent.des }}
               </p>
             </div>
           </div>
@@ -1448,10 +1441,10 @@ const shouldShowButtonText = computed(() => {
             :data-base64-list="dataBase64List"
             :file-list="fileList"
             :saved-files="savedFiles"
-            :is-selected-app="isSelectedApp"
-            :selected-app="selectedApp"
+            :is-selected-agent="isSelectedAgent"
+            :selected-agent="selectedAgent"
             @clear-data="clearData"
-            @clear-select-app="clearSelectApp"
+            @clear-select-agent="clearSelectAgent"
           />
           <!-- 渐变阴影效果 -->
 

@@ -1,6 +1,6 @@
 <route lang="yaml">
 meta:
-  title: App分类管理
+  title: Agent能力分类
 </route>
 
 <script lang="ts" setup>
@@ -37,7 +37,7 @@ meta:
   });
 
   const rules = reactive<FormRules>({
-    name: [{ required: true, message: '请填写分类名称', trigger: 'blur' }],
+    name: [{ required: true, message: '请填写能力分类名称', trigger: 'blur' }],
     des: [{ required: false, message: '请填写分类描述', trigger: 'blur' }],
     coverImg: [{ required: false, message: '请填写分类封面图片地址', trigger: 'blur' }],
     order: [{ required: false, message: '请填写排序ID', trigger: 'blur' }],
@@ -165,11 +165,11 @@ meta:
   <div>
     <PageHeader>
       <template #title>
-        <div class="flex items-center gap-4">应用分类配置</div>
+        <div class="flex items-center gap-4">Agent分类配置</div>
       </template>
       <template #content>
         <div class="text-sm/6">
-          <div>应用分类可能会被多个用户收藏，一旦创建，不建议删除。</div>
+          <div>Agent分类可能会被多个用户收藏，一旦创建，不建议删除。</div>
         </div>
       </template>
       <HButton outline @click="visible = true">
@@ -180,10 +180,10 @@ meta:
 
     <page-main>
       <el-form ref="formRef" :inline="true" :model="formInline">
-        <el-form-item label="分类名称" prop="name">
+        <el-form-item label="能力分类名称" prop="name">
           <el-input
             v-model="formInline.name"
-            placeholder="分类名称[模糊搜索]"
+            placeholder="能力分类名称[模糊搜索]"
             @keydown.enter.prevent="queryCatList"
           />
         </el-form-item>
@@ -220,8 +220,8 @@ meta:
             />
           </template>
         </el-table-column> -->
-        <el-table-column prop="name" label="分类名称" />
-        <el-table-column prop="appCount" label="应用数量" />
+        <el-table-column prop="name" label="能力分类名称" />
+        <el-table-column prop="appCount" label="Agent数量" />
         <el-table-column prop="order" label="排序ID" />
         <el-table-column prop="status" label="分类状态">
           <template #default="scope">
@@ -299,8 +299,8 @@ meta:
         :model="formPackage"
         :rules="rules"
       >
-        <el-form-item label="分类名称" prop="name">
-          <el-input v-model="formPackage.name" placeholder="请填写分类名称" />
+        <el-form-item label="能力分类名称" prop="name">
+          <el-input v-model="formPackage.name" placeholder="请填写能力分类名称" />
         </el-form-item>
         <el-form-item label="分类状态" prop="status">
           <el-select v-model="formPackage.status" placeholder="请选择分类状态">

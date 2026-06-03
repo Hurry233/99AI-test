@@ -12,14 +12,14 @@ interface Props {
   dataBase64List: string[] // 上传文件的base64预览列表
   fileList: File[] // 上传的文件列表
   savedFiles: FileItem[] // 已保存的文件列表
-  isSelectedApp: boolean // 是否选中了应用
-  selectedApp: any // 选中的应用
+  isSelectedAgent: boolean // 是否选中了 Agent
+  selectedAgent?: any // 选中的 Agent
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
   (e: 'clearData', index: number, isSavedFile: boolean): void
-  (e: 'clearSelectApp'): void
+  (e: 'clearSelectAgent'): void
 }>()
 
 // 记录正在转换的文件索引（PDF、Excel、Word或PPTX）
@@ -31,8 +31,8 @@ const handleClearData = (index: number, isSavedFile: boolean) => {
   emit('clearData', index, isSavedFile)
 }
 
-const handleClearSelectApp = () => {
-  emit('clearSelectApp')
+const handleClearSelectAgent = () => {
+  emit('clearSelectAgent')
 }
 
 // 监听savedFiles变化，自动处理新上传的文件
@@ -47,46 +47,46 @@ watch(
 
 <template>
   <div
-    v-if="dataBase64List.length > 0 || savedFiles.length > 0 || isSelectedApp"
+    v-if="dataBase64List.length > 0 || savedFiles.length > 0 || isSelectedAgent"
     class="self-start w-full select-none"
   >
     <!-- 上传的文件和图片显示区域 -->
     <div class="self-start w-full rounded-t-2xl mt-2">
-      <!-- 选中的应用 -->
-      <div v-if="isSelectedApp" class="relative w-full mb-2">
+      <!-- 选中的 Agent -->
+      <div v-if="isSelectedAgent" class="relative w-full mb-2">
         <div
-          v-if="isSelectedApp"
+          v-if="isSelectedAgent"
           class="flex px-2 bg-opacity dark:bg-gray-750 rounded-b-md rounded-t-2xl items-center justify-start h-12 text-gray-700 dark:text-gray-400 shadow-sm"
         >
           <div
             class="w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center overflow-hidden shadow-sm border border-gray-300 mr-3"
           >
             <img
-              v-if="selectedApp.coverImg"
-              :src="selectedApp.coverImg"
-              alt="Cover Image"
+              v-if="selectedAgent.coverImg"
+              :src="selectedAgent.coverImg"
+              alt="Agent icon"
               class="w-8 h-8 rounded-full flex justify-start"
             />
             <span
               v-else
               class="w-8 h-8 text-base font-medium text-gray-700 dark:text-gray-400 rounded-full flex items-center justify-center dark:bg-gray-700"
             >
-              {{ selectedApp.name.charAt(0) }}
+              {{ selectedAgent.name.charAt(0) }}
             </span>
           </div>
 
           <h3
             class="text-md font-bold text-gray-600 dark:text-gray-400 mr-3 flex-shrink-0 flex justify-start"
           >
-            {{ selectedApp.name }}
+            {{ selectedAgent.name }}
           </h3>
           <p class="text-base text-gray-400 dark:text-gray-400 truncate pr-10">
-            {{ selectedApp.des }}
+            {{ selectedAgent.des }}
           </p>
 
           <div
             class="absolute top-1/2 right-4 transform -translate-y-1/2 cursor-pointer text-gray-300 hover:text-gray-500"
-            @click="handleClearSelectApp()"
+            @click="handleClearSelectAgent()"
           >
             <Close size="18" class="rounded-full" />
           </div>

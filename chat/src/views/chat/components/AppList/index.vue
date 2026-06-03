@@ -1,47 +1,28 @@
 <script setup lang="ts">
-import { fetchCollectAppAPI, fetchQueryAppCatsAPI, fetchQueryAppsAPI } from '@/api/appStore'
+import {
+  fetchCollectAgentAPI,
+  fetchQueryAgentCategoriesAPI,
+  fetchQueryAgentsAPI,
+  type AgentCategory,
+  type AgentItem,
+} from '@/api/agent'
 // import { fetchQueryMenuAPI } from '@/api/config';
 import type { ResData } from '@/api/types'
 // 移除DynamicFormModal组件的导入
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
-import { useAppCatStore, useAuthStoreWithout, useChatStore, useGlobalStoreWithOut } from '@/store'
+import { useAppCatStore, useAuthStoreWithout, useGlobalStoreWithOut } from '@/store'
 import { DIALOG_TABS } from '@/store/modules/global'
 import { message } from '@/utils/message'
 import { Left, Right, Search, Star, VipOne } from '@icon-park/vue-next'
 import PinyinMatch from 'pinyin-match'
 import { computed, inject, onMounted, ref, watch } from 'vue'
 
-// 接口定义
 interface FormField {
   type: 'input' | 'select'
   title: string
   placeholder: string
   options?: string[]
-}
-
-interface App {
-  id: number
-  name: string
-  des: string
-  coverImg: string
-  catId: string
-  appCount: number
-  demoData: string
-  loading?: boolean
-  createdAt: string
-  updatedAt: string
-  catName?: string
-  backgroundImg?: string
-  prompt?: string
-}
-
-interface AppCat {
-  id: number
-  name: string
-  coverImg: string
-  des: string
-  isMember?: number
 }
 
 const authStore = useAuthStoreWithout()
@@ -53,13 +34,11 @@ const useGlobalStore = useGlobalStoreWithOut()
 const ms = message()
 const appCatStore = useAppCatStore()
 const keyword = ref('')
-const chatStore = useChatStore()
-
 const catId = computed(() => appCatStore.catId)
-const appList = ref<App[]>([])
-const activeList = ref<App[]>([])
+const agentList = ref<AgentItem[]>([])
+const activeList = ref<AgentItem[]>([])
 const mineApps = computed(() => appCatStore.mineApps)
-const catList = ref<AppCat[]>([])
+const catList = ref<AgentCategory[]>([])
 const activeCatId = ref(0)
 
 // 从chatBase inject弹窗相关方法
@@ -73,49 +52,49 @@ const tryParseJson = inject('tryParseJson') as
 // Define emits
 const emit = defineEmits(['run-app', 'show-member-dialog', 'run-app-with-data'])
 
-function isMineApp(app: App): boolean {
-  return mineApps.value.some((item: any) => item.appId === app.id)
+function isMineAgent(agent: AgentItem): boolean {
+  return mineApps.value.some((item: any) => item.appId === agent.id)
 }
 
-async function queryApps() {
-  const res: ResData = await fetchQueryAppsAPI()
-  appList.value = res?.data?.rows.map((item: App) => {
+async function queryAgents() {
+  const res: ResData = await fetchQueryAgentsAPI()
+  agentList.value = res?.data?.rows.map((item: AgentItem) => {
     item.loading = false
     return item
   })
-  activeList.value = appList.value
+  activeList.value = agentList.value
 }
 
 const list = computed(() => {
   if (keyword.value) {
     const keywordLower = keyword.value.toLowerCase()
-    return appList.value.filter(item => PinyinMatch.match(item.name, keywordLower))
+    return agentList.value.filter(item => PinyinMatch.match(item.name, keywordLower))
   }
-  if (activeCatId.value === 0) return appList.value
+  if (activeCatId.value === 0) return agentList.value
 
-  return appList.value.filter(item => {
+  return agentList.value.filter(item => {
     if (!item.catId) return false
-    const catIds = item.catId.split(',').map(id => Number(id.trim()))
+    const catIds = String(item.catId)
+      .split(',')
+      .map(id => Number(id.trim()))
     return catIds.includes(activeCatId.value)
   })
 })
 
-async function handleCollect(app: App) {
-  app.loading = true
+async function handleCollect(agent: AgentItem) {
+  agent.loading = true
   try {
-    const res: ResData = await fetchCollectAppAPI({ appId: app.id })
+    const res: ResData = await fetchCollectAgentAPI({ appId: agent.id })
     ms.success(res.data)
     await appCatStore.queryMineApps()
-    app.loading = false
+    agent.loading = false
   } catch (error) {
-    app.loading = false
+    agent.loading = false
   }
 }
 
-async function handleRunApp(app: App) {
-  const appIdAsNumber = Number(app.id)
-
-  const appCats = app.catName?.split(',').map(cat => cat.trim()) || []
+async function handleRunAgent(agent: AgentItem) {
+  const appCats = agent.catName?.split(',').map(cat => cat.trim()) || []
   const isMemberApp = appCats.some(catName => isMemberCategory(catName))
 
   if (isMemberApp) {
@@ -124,7 +103,7 @@ async function handleRunApp(app: App) {
       (userBalance.value.expirationTime && new Date(userBalance.value.expirationTime) > new Date())
 
     if (!isMember) {
-      ms.info('当前应用是会员专属应用，请开通会员后使用！')
+      ms.info('当前 Agent 是会员专属能力，请开通会员后使用！')
       if (isMobile.value) {
         useGlobalStore.settingsActiveTab = DIALOG_TABS.MEMBER
         useGlobalStore.updateMobileSettingsDialog(true)
@@ -135,36 +114,21 @@ async function handleRunApp(app: App) {
     }
   }
 
-  // 检查是否有配置弹窗功能
-  console.log('=== AppList应用启动调试 ===')
-  console.log('点击的应用数据:', app)
-  console.log('应用prompt字段:', app.prompt)
-  console.log(
-    '弹窗方法可用性 - tryParseJson:',
-    !!tryParseJson,
-    'showAppConfigModal:',
-    !!showAppConfigModal
-  )
-
   if (tryParseJson && showAppConfigModal) {
-    const formSchema = tryParseJson(app.prompt)
-    console.log('AppList解析的表单结构:', formSchema)
+    const formSchema = tryParseJson(agent.prompt)
 
     if (formSchema) {
-      // 显示配置弹窗
-      console.log('AppList即将显示配置弹窗')
-      showAppConfigModal(app, formSchema)
+      showAppConfigModal(agent, formSchema)
       return
     }
   }
 
-  // 如果没有配置或没有inject到方法，直接运行应用
-  console.log('AppList直接运行应用，没有配置弹窗')
-  emit('run-app', app)
+  // 如果没有配置或没有 inject 到方法，直接运行 Agent
+  emit('run-app', agent)
 }
 
 async function queryCats() {
-  const res: ResData = await fetchQueryAppCatsAPI()
+  const res: ResData = await fetchQueryAgentCategoriesAPI()
   const defaultCat = {
     id: 0,
     name: t('app.allCategories'),
@@ -179,11 +143,13 @@ function handleChangeCatId(id: number) {
 }
 
 watch(catId, val => {
-  if (!val) activeList.value = appList.value
+  if (!val) activeList.value = agentList.value
   else {
-    activeList.value = appList.value.filter(item => {
+    activeList.value = agentList.value.filter(item => {
       if (!item.catId) return false
-      const catIds = item.catId.split(',').map(id => Number(id.trim()))
+      const catIds = String(item.catId)
+        .split(',')
+        .map(id => Number(id.trim()))
       return catIds.includes(Number(val))
     })
   }
@@ -232,18 +198,53 @@ function isMemberCategory(catName: string): boolean {
 
 onMounted(() => {
   queryCats()
-  queryApps()
+  queryAgents()
 })
 </script>
 
 <template>
-  <!-- 应用列表 -->
+  <!-- Agent 工作台 -->
   <div
     class="bg-white dark:bg-gray-900 flex flex-col h-full w-full"
     :class="[isMobile ? 'px-2 py-2' : 'pb-3']"
   >
+    <section class="mx-auto w-full flex-shrink-0 px-1 pt-2" :class="[isMobile ? '' : 'px-20']">
+      <div
+        class="rounded-3xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-5 shadow-sm dark:border-gray-800 dark:from-gray-850 dark:to-gray-900"
+      >
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-primary-500">
+          Agent Platform
+        </p>
+        <div class="mt-2 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-50">
+              Agent 工作台
+            </h1>
+            <p class="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+              以 ChatGPT 官网体验为方向，保留真正有价值的 Agent
+              能力：研究、写作、代码、文件分析与多步骤任务编排。
+            </p>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center text-xs text-gray-500 dark:text-gray-400">
+            <div class="rounded-2xl bg-white px-3 py-2 shadow-sm dark:bg-gray-800">
+              <strong class="block text-sm text-gray-900 dark:text-gray-100">任务</strong>
+              可编排
+            </div>
+            <div class="rounded-2xl bg-white px-3 py-2 shadow-sm dark:bg-gray-800">
+              <strong class="block text-sm text-gray-900 dark:text-gray-100">模型</strong>
+              可切换
+            </div>
+            <div class="rounded-2xl bg-white px-3 py-2 shadow-sm dark:bg-gray-800">
+              <strong class="block text-sm text-gray-900 dark:text-gray-100">文件</strong>
+              可分析
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div
-      class="flex justify-between items-center mb-2 flex-shrink-0 mx-auto w-full"
+      class="flex justify-between items-center my-3 flex-shrink-0 mx-auto w-full"
       :class="[isMobile ? 'w-full' : 'px-20']"
     >
       <Left
@@ -339,12 +340,12 @@ onMounted(() => {
         <div
           v-for="item in list"
           :key="item.id"
-          @click="handleRunApp(item)"
+          @click="handleRunAgent(item)"
           class="group cursor-pointer flex items-center gap-3 rounded-xl px-3 py-3 transition-colors duration-200 bg-gray-50 dark:bg-gray-750 ring-1 ring-gray-100 dark:ring-gray-750 hover:shadow-md"
           style="min-height: 7rem"
         >
           <div v-if="item.coverImg" class="flex-shrink-0">
-            <img :src="item.coverImg" class="rounded-full w-12 h-12 shadow-sm" alt="app-image" />
+            <img :src="item.coverImg" class="rounded-full w-12 h-12 shadow-sm" alt="Agent icon" />
           </div>
           <div
             v-else
@@ -367,9 +368,9 @@ onMounted(() => {
                 {{ item.name }}
               </span>
               <Star
-                :theme="isMineApp(item) ? 'filled' : 'outline'"
+                :theme="isMineAgent(item) ? 'filled' : 'outline'"
                 size="16"
-                :fill="isMineApp(item) ? '#facc15' : 'currentColor'"
+                :fill="isMineAgent(item) ? '#facc15' : 'currentColor'"
                 class="btn-icon-action cursor-pointer flex-shrink-0 group-hover:text-yellow-400 dark:group-hover:text-yellow-500"
                 @click.stop="handleCollect(item)"
               />
