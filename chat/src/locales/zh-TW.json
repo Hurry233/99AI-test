@@ -51,7 +51,12 @@
     "showRawText": "顯示原文",
     "loading": "加載中...",
     "readAloud": "朗讀",
-    "vipCenter": "會員中心"
+    "vipCenter": "會員中心",
+    "myApps": "我的 Agent",
+    "appSquare": "Agent 中心",
+    "agentWorkspace": "Agent 工作台",
+    "agentWorkspaceDesc": "編排任務、研究、程式碼與檔案",
+    "selectAppOrTopic": "選擇 Agent 或輸入任務，開始多步驟協作"
   },
   "setting": {
     "setting": "設定",
@@ -99,5 +104,12 @@
     "pleaseEnterCardDetails": "請輸入卡密資訊",
     "exchange": "兌換",
     "buyCardSecret": "購買卡密"
+  },
+  "app": {
+    "sampleTemplate": "範例模板",
+    "exploreInfinitePossibilities": "讓 Agent 幫你研究、寫作、編碼、分析檔案並交付成果",
+    "searchAppNameQuickFind": "搜尋 Agent、能力或任務場景...",
+    "allCategories": "全部能力",
+    "noModelConfigured": "管理員未配置該 Agent 的專屬模型，請聯絡管理員配置~"
   }
 }

@@ -85,8 +85,10 @@
     "clearAllNonFavoriteConversations": "Clear all non-favorite conversations?",
     "more": "More",
     "collapse": "Collapse",
-    "myApps": "My Apps",
-    "appSquare": "App Square",
+    "myApps": "My Agents",
+    "appSquare": "Agent Center",
+    "agentWorkspace": "Agent Workspace",
+    "agentWorkspaceDesc": "Plan tasks, research, code, and files",
     "favorites": "Favorites",
     "todayConversations": "Today",
     "Conversations": "",
@@ -133,14 +135,14 @@
     "imageToImage": "Image to Image",
     "faceConsistency": "Face Consistency",
     "styleConsistency": "Style Consistency",
-    "selectAppOrTopic": "Select an application or topic for quick conversation"
+    "selectAppOrTopic": "Select an Agent or describe a task to start multi-step work"
   },
   "app": {
     "sampleTemplate": "Sample Template",
-    "exploreInfinitePossibilities": "Explore infinite possibilities, create a smart future with AI",
-    "searchAppNameQuickFind": "Search app names, quick find applications...",
-    "allCategories": "All Categories",
-    "noModelConfigured": "No specific application model has been configured by the administrator, please contact them to set it up~"
+    "exploreInfinitePossibilities": "Use Agents for research, writing, coding, file analysis, and deliverables",
+    "searchAppNameQuickFind": "Search Agents, capabilities, or task scenarios...",
+    "allCategories": "All Capabilities",
+    "noModelConfigured": "No dedicated model is configured for this Agent. Please contact the administrator.~"
   },
   "setting": {
     "setting": "Setting",

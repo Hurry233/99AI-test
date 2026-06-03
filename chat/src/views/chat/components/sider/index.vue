@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import logo from '@/assets/logo.png'
+import { agentPlatformFeatures } from '@/config/agentPlatform'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
 import { useAppStore, useAuthStore, useChatStore, useGlobalStoreWithOut } from '@/store'
@@ -202,7 +203,10 @@ watch(
 )
 
 onMounted(() => {
-  chatStore.queryPlugins()
+  if (agentPlatformFeatures.legacyPluginMarketplace) {
+    chatStore.queryPlugins()
+  }
+
   chatStore.queryMyGroup()
 })
 

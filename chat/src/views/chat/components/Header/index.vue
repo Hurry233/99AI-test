@@ -68,7 +68,7 @@ const isPreviewerVisible = computed(
     useGlobalStore.showImagePreviewer
 )
 
-// 计算应用广场状态
+// 计算 Agent 工作台状态
 const isAppListVisible = computed(() => useGlobalStore.showAppListComponent)
 const configObj = computed(() => {
   const configString = activeGroupInfo.value?.config
@@ -127,7 +127,7 @@ async function handleUpdateCollapsed() {
   appStore.setSiderCollapsed(!collapsed.value)
 }
 
-// 关闭应用广场
+// 关闭 Agent 工作台
 function closeAppList() {
   useGlobalStore.updateShowAppListComponent(false)
   // 在移动端不自动展开侧边栏
@@ -381,7 +381,7 @@ function openSettings(tab?: number) {
               <div v-if="!isMobile" class="tooltip tooltip-bottom">切换主题</div>
             </div>
 
-            <!-- 工具链接组件，在非预览器状态、非外部链接状态、非应用广场状态下显示 -->
+            <!-- 工具链接组件，在非预览器状态、非外部链接状态、非 Agent 工作台状态下显示 -->
             <ToolLinks v-if="!externalLinkActive && !isPreviewerVisible && !isAppListVisible" />
 
             <!-- 文本编辑器按钮 -->
@@ -398,7 +398,7 @@ function openSettings(tab?: number) {
               <div v-if="!isMobile" class="tooltip tooltip-bottom">文本编辑器</div>
             </div>
 
-            <!-- 外部链接状态下显示关闭按钮，应用广场状态下显示关闭按钮，否则显示新对话按钮 -->
+            <!-- 外部链接状态下显示关闭按钮，Agent 工作台状态下显示关闭按钮，否则显示新对话按钮 -->
             <div v-if="externalLinkActive" class="relative group mx-1">
               <button
                 type="button"
@@ -423,7 +423,7 @@ function openSettings(tab?: number) {
                 type="button"
                 class="btn-icon btn-md"
                 @click="closeAppList"
-                aria-label="关闭应用广场"
+                aria-label="关闭 Agent 工作台"
               >
                 <Close size="20" aria-hidden="true" />
               </button>

@@ -124,7 +124,7 @@ async function handleRunApp(app: App) {
       (userBalance.value.expirationTime && new Date(userBalance.value.expirationTime) > new Date())
 
     if (!isMember) {
-      ms.info('当前应用是会员专属应用，请开通会员后使用！')
+      ms.info('当前 Agent 是会员专属能力，请开通会员后使用！')
       if (isMobile.value) {
         useGlobalStore.settingsActiveTab = DIALOG_TABS.MEMBER
         useGlobalStore.updateMobileSettingsDialog(true)
@@ -136,9 +136,9 @@ async function handleRunApp(app: App) {
   }
 
   // 检查是否有配置弹窗功能
-  console.log('=== AppList应用启动调试 ===')
-  console.log('点击的应用数据:', app)
-  console.log('应用prompt字段:', app.prompt)
+  console.log('=== Agent启动调试 ===')
+  console.log('点击的Agent数据:', app)
+  console.log('Agent prompt字段:', app.prompt)
   console.log(
     '弹窗方法可用性 - tryParseJson:',
     !!tryParseJson,
@@ -148,18 +148,18 @@ async function handleRunApp(app: App) {
 
   if (tryParseJson && showAppConfigModal) {
     const formSchema = tryParseJson(app.prompt)
-    console.log('AppList解析的表单结构:', formSchema)
+    console.log('Agent解析的表单结构:', formSchema)
 
     if (formSchema) {
       // 显示配置弹窗
-      console.log('AppList即将显示配置弹窗')
+      console.log('Agent即将显示配置弹窗')
       showAppConfigModal(app, formSchema)
       return
     }
   }
 
   // 如果没有配置或没有inject到方法，直接运行应用
-  console.log('AppList直接运行应用，没有配置弹窗')
+  console.log('Agent直接运行，没有配置弹窗')
   emit('run-app', app)
 }
 
@@ -237,13 +237,48 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- 应用列表 -->
+  <!-- Agent 工作台 -->
   <div
     class="bg-white dark:bg-gray-900 flex flex-col h-full w-full"
     :class="[isMobile ? 'px-2 py-2' : 'pb-3']"
   >
+    <section class="mx-auto w-full flex-shrink-0 px-1 pt-2" :class="[isMobile ? '' : 'px-20']">
+      <div
+        class="rounded-3xl border border-gray-100 bg-gradient-to-br from-gray-50 to-white p-5 shadow-sm dark:border-gray-800 dark:from-gray-850 dark:to-gray-900"
+      >
+        <p class="text-xs font-semibold uppercase tracking-[0.2em] text-primary-500">
+          Agent Platform
+        </p>
+        <div class="mt-2 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-50">
+              Agent 工作台
+            </h1>
+            <p class="mt-2 max-w-2xl text-sm leading-6 text-gray-600 dark:text-gray-400">
+              以 ChatGPT 官网体验为方向，保留真正有价值的 Agent
+              能力：研究、写作、代码、文件分析与多步骤任务编排。
+            </p>
+          </div>
+          <div class="grid grid-cols-3 gap-2 text-center text-xs text-gray-500 dark:text-gray-400">
+            <div class="rounded-2xl bg-white px-3 py-2 shadow-sm dark:bg-gray-800">
+              <strong class="block text-sm text-gray-900 dark:text-gray-100">任务</strong>
+              可编排
+            </div>
+            <div class="rounded-2xl bg-white px-3 py-2 shadow-sm dark:bg-gray-800">
+              <strong class="block text-sm text-gray-900 dark:text-gray-100">模型</strong>
+              可切换
+            </div>
+            <div class="rounded-2xl bg-white px-3 py-2 shadow-sm dark:bg-gray-800">
+              <strong class="block text-sm text-gray-900 dark:text-gray-100">文件</strong>
+              可分析
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <div
-      class="flex justify-between items-center mb-2 flex-shrink-0 mx-auto w-full"
+      class="flex justify-between items-center my-3 flex-shrink-0 mx-auto w-full"
       :class="[isMobile ? 'w-full' : 'px-20']"
     >
       <Left
@@ -344,7 +379,7 @@ onMounted(() => {
           style="min-height: 7rem"
         >
           <div v-if="item.coverImg" class="flex-shrink-0">
-            <img :src="item.coverImg" class="rounded-full w-12 h-12 shadow-sm" alt="app-image" />
+            <img :src="item.coverImg" class="rounded-full w-12 h-12 shadow-sm" alt="Agent icon" />
           </div>
           <div
             v-else

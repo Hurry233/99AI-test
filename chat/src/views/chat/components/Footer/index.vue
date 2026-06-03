@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { fetchQueryAppsAPI, fetchQueryOneCatAPI } from '@/api/appStore'
 import type { ResData } from '@/api/types'
+import { agentPlatformFeatures } from '@/config/agentPlatform'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAuthStore, useChatStore, useGlobalStoreWithOut } from '@/store'
 import {
@@ -236,7 +237,7 @@ watch(
 const handleInput = async (event: KeyboardEvent) => {
   const inputElement = event.target as HTMLTextAreaElement
   const inputValue = inputElement.value
-  showSuggestions.value = inputValue.startsWith('@')
+  showSuggestions.value = agentPlatformFeatures.agentShortcutSearch && inputValue.startsWith('@')
 
   // 清除之前的定时器，如果有的话
   if (searchTimeout) {
@@ -252,7 +253,7 @@ const handleInput = async (event: KeyboardEvent) => {
         try {
           const keywordLower = searchTerm.toLowerCase()
 
-          // 根据拼音匹配过滤符合的应用
+          // 根据拼音匹配过滤符合的 Agent
           const filteredResults = appList.value.filter(item =>
             PinyinMatch.match(item.name, keywordLower)
           )
@@ -263,7 +264,7 @@ const handleInput = async (event: KeyboardEvent) => {
           searchResults.value = []
         }
       } else {
-        // 如果关键字为空，随机选取5个结果
+        // 如果关键字为空，随机选取 5 个 Agent
         const randomResults = appList.value
           .sort(() => Math.random() - 0.5) // 随机打乱顺序
           .slice(0, 5) // 取前5个
@@ -276,6 +277,8 @@ const handleInput = async (event: KeyboardEvent) => {
 }
 
 async function queryApps() {
+  if (!agentPlatformFeatures.agentShortcutSearch) return
+
   const res: ResData = await fetchQueryAppsAPI()
   appList.value = res?.data?.rows.map((item: App) => {
     item.loading = false
@@ -947,7 +950,7 @@ const handleEnter = (event: KeyboardEvent) => {
 }
 
 const selectApp = async (app: any) => {
-  // 这里可以设置选中的应用程序的逻辑
+  // 这里可以设置选中的 Agent 逻辑
   selectedApp.value = app
   isSelectedApp.value = true
   await chatStore.setPrompt('')
@@ -1095,38 +1098,41 @@ const placeholderText = computed(() => {
   }
 
   // 默认提示
-  return `向 ${siteName} 发消息，使用 @ 搜索应用`
+  return `向 ${siteName} 发消息，使用 @ 搜索 Agent`
 })
 
 const shouldShowNetworkSearch = computed(() => {
-  // 只检查是否支持网络搜索且没有使用插件
+  // 只检查当前模型是否支持网络搜索
   return isNetworkSearch.value
 })
 
 const shouldShowDeepThinking = computed(() => {
-  // 只检查是否支持深度思考且没有使用插件
+  // 只检查当前模型是否支持深度思考
   return isDeepThinking.value
 })
 
-// 添加流程图按钮显示控制
+// 添加图表工具按钮显示控制
 const shouldShowMermaidTool = computed(() => {
-  // 当没有使用其他插件时显示流程图按钮
-  return !usingPlugin.value || usingPlugin.value?.parameters === 'mermaid'
+  // 图表工具与 Agent 能力并列展示，不依赖旧插件市场
+  return (
+    agentPlatformFeatures.mermaidDiagramTool &&
+    (!usingPlugin.value || usingPlugin.value?.parameters === 'mermaid')
+  )
 })
 
-// 添加mermaid插件状态控制
+// 添加 Mermaid 图表工具状态控制
 const usingMermaid = computed({
   get: () => usingPlugin.value?.parameters === 'mermaid',
   set: value => {
     if (value) {
-      // 启用mermaid插件
+      // 启用 Mermaid 图表工具
       chatStore.setUsingPlugin({
         pluginName: 'Mermaid流程图',
         description: '支持Mermaid流程图的创建、编辑和查看，轻松可视化流程和关系',
         parameters: 'mermaid',
       })
     } else {
-      // 禁用mermaid插件
+      // 禁用 Mermaid 图表工具
       chatStore.setUsingPlugin(null)
     }
   },
@@ -1219,7 +1225,9 @@ onMounted(async () => {
       inputRef.value.focus()
     }
   })
-  await queryApps()
+  if (agentPlatformFeatures.agentShortcutSearch) {
+    await queryApps()
+  }
 
   // 添加全局拖拽事件监听
   document.addEventListener('dragover', handleDocumentDragOver)

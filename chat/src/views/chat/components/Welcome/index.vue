@@ -30,7 +30,31 @@ const greeting = computed(() => {
 
 const homeWelcomeContent =
   authStore.globalConfig?.homeWelcomeContent ||
-  '我可以帮你写代码、读文件、写作各种创意内容，请把你的任务交给我吧~'
+  '像 ChatGPT 一样，把研究、写作、代码、数据和多模态任务交给 Agent 持续推进。'
+
+const agentCapabilities = [
+  {
+    title: '深度研究',
+    desc: '梳理资料、生成报告、对比方案',
+    accent: 'from-blue-500 to-cyan-500',
+  },
+  {
+    title: '写作与创作',
+    desc: '起草、改写、翻译、生成结构化内容',
+    accent: 'from-violet-500 to-fuchsia-500',
+  },
+  {
+    title: '代码与自动化',
+    desc: '编程、调试、解释代码与构建工作流',
+    accent: 'from-emerald-500 to-teal-500',
+  },
+  {
+    title: '文件与数据分析',
+    desc: '读取文件、提炼要点、辅助表格分析',
+    accent: 'from-amber-500 to-orange-500',
+  },
+]
+
 const chatStore = useChatStore()
 const activeGroupInfo = computed(() => chatStore.getChatByGroupInfo())
 const activeAppId = computed(() => activeGroupInfo?.value?.appId || 0)
@@ -90,13 +114,31 @@ watch(
   </div>
 
   <!-- 当 appDetail 不存在时显示的内容 -->
-  <div v-else class="flex flex-col items-center justify-center select-none">
-    <div class="flex items-center">
-      <img :src="logoPath" alt="Logo" class="h-7 w-7 mr-2" />
-      <h1 class="text-3xl font-bold text-primary-500">{{ greeting }}</h1>
+  <div v-else class="flex w-full max-w-4xl flex-col items-center justify-center select-none px-4">
+    <div class="flex items-center text-center">
+      <img :src="logoPath" alt="Logo" class="h-8 w-8 mr-3 rounded-xl" />
+      <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-50 md:text-3xl">
+        {{ greeting }}
+      </h1>
     </div>
-    <h2 class="rounded my-3 text-center text-base text-gray-600 dark:text-gray-400">
+    <h2
+      class="mt-3 max-w-2xl rounded text-center text-base leading-7 text-gray-600 dark:text-gray-400"
+    >
       {{ homeWelcomeContent }}
     </h2>
+
+    <div class="mt-6 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        v-for="capability in agentCapabilities"
+        :key="capability.title"
+        class="rounded-2xl border border-gray-100 bg-white/80 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-800 dark:bg-gray-900/80"
+      >
+        <div :class="['mb-3 h-1.5 w-12 rounded-full bg-gradient-to-r', capability.accent]"></div>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-gray-100">
+          {{ capability.title }}
+        </h3>
+        <p class="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ capability.desc }}</p>
+      </div>
+    </div>
   </div>
 </template>
