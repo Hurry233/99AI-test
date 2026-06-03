@@ -10087,16 +10087,13 @@ let OpenAIChatService = class OpenAIChatService {
             });
         }
         const files = Array.isArray(responseContext?.files) ? responseContext.files : [];
-        const pdfFiles = files.filter(file => String(file?.url || '').toLowerCase().includes('.pdf'));
-        if (pdfFiles.length > 0 && input.length > 0) {
+        const inputFiles = files.filter(file => this.isResponsesInputFile(file));
+        if (inputFiles.length > 0 && input.length > 0) {
             const targetMessage = [...input].reverse().find(item => item.role === 'user') || input[input.length - 1];
+            const fileParts = inputFiles.map(file => this.buildResponsesFilePart(file));
             if (typeof targetMessage.content === 'string') {
                 targetMessage.content = [
-                    ...pdfFiles.map(file => ({
-                        type: 'input_file',
-                        file_url: file.url,
-                        filename: file.name || 'document.pdf',
-                    })),
+                    ...fileParts,
                     {
                         type: 'input_text',
                         text: targetMessage.content,
@@ -10105,11 +10102,7 @@ let OpenAIChatService = class OpenAIChatService {
             }
             else if (Array.isArray(targetMessage.content)) {
                 targetMessage.content = [
-                    ...pdfFiles.map(file => ({
-                        type: 'input_file',
-                        file_url: file.url,
-                        filename: file.name || 'document.pdf',
-                    })),
+                    ...fileParts,
                     ...targetMessage.content,
                 ];
             }
@@ -10141,6 +10134,35 @@ let OpenAIChatService = class OpenAIChatService {
         if (!tools.some(item => item?.type === tool.type)) {
             tools.push(tool);
         }
+    }
+    getResponsesFileExtension(file) {
+        const source = String(file?.name || file?.url || '').split('?')[0];
+        return source.includes('.') ? source.split('.').pop().toLowerCase() : '';
+    }
+    isResponsesInputFile(file) {
+        if (file?.file_id || file?.fileId) {
+            return true;
+        }
+        const url = String(file?.url || '');
+        if (!/^https?:\/\//i.test(url)) {
+            return false;
+        }
+        const acceptedExtensions = new Set(['pdf', 'txt', 'md', 'json', 'html', 'xml', 'js', 'ts', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'rs', 'php', 'rb', 'swift', 'kt', 'doc', 'docx', 'rtf', 'odt', 'ppt', 'pptx', 'csv', 'tsv', 'xls', 'xlsx']);
+        return acceptedExtensions.has(this.getResponsesFileExtension(file));
+    }
+    buildResponsesFilePart(file) {
+        const part = {
+            type: 'input_file',
+            file_url: file.url,
+        };
+        if (file.file_id || file.fileId) {
+            delete part.file_url;
+            part.file_id = file.file_id || file.fileId;
+        }
+        if (file.filename || file.name) {
+            part.filename = file.filename || file.name;
+        }
+        return part;
     }
     buildResponsesRequest(model, messagesHistory, options) {
         const extraParam = options?.extraParam || {};
@@ -10175,9 +10197,11 @@ let OpenAIChatService = class OpenAIChatService {
         }
         const tools = Array.isArray(responsesOptions.tools) ? [...responsesOptions.tools] : [];
         if (responseContext.usingNetwork && responsesOptions.useHostedWebSearch !== false) {
-            this.appendResponsesTool(tools, {
+            const webSearchTool = {
                 type: responsesOptions.webSearchToolType || 'web_search',
-            });
+                ...(responsesOptions.web_search || responsesOptions.webSearch || {}),
+            };
+            this.appendResponsesTool(tools, webSearchTool);
             request.tool_choice = request.tool_choice || 'auto';
         }
         if ((scenario === 'image_generation' || scenario === 'image_edit') && responsesOptions.useImageGenerationTool !== false) {
@@ -10331,6 +10355,7 @@ let OpenAIChatService = class OpenAIChatService {
                 this.emitResponseMeta(result, onProgress, {
                     imageStatus: 'generating',
                     partialImageIndex: event.partial_image_index,
+                    hasPartialImage: Boolean(event.partial_image_b64 || event.b64_json),
                     elapsedMs: Date.now() - startedAt,
                 });
             }
