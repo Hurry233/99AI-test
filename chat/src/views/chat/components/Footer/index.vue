@@ -51,13 +51,7 @@ const inputRef = ref<Ref | null>(null)
 const footerRef = ref<HTMLElement | null>(null) // 添加容器引用
 const isDragging = ref(false) // 添加拖拽状态标志
 const isFileDraggingOverPage = ref(false) // 添加文件拖到页面内(但未到输入框)的状态标志
-const extraParam = ref<{
-  size: string
-  style: string
-  quality?: string
-  compression?: string
-  background?: string
-}>({ size: '', style: '' })
+const extraParam = ref<Record<string, any>>({ size: '', style: '' })
 
 const showSuggestions = ref(false)
 const selectedApp = ref()
@@ -112,6 +106,9 @@ const isStreamIn = computed(() => {
 })
 const dataSources = computed(() => chatStore.chatList)
 const activeModelName = computed(() => String(configObj?.value.modelInfo.modelName))
+const activeModel = computed(() =>
+  String(configObj?.value.modelInfo.model || chatStore?.activeModel || '')
+)
 const activeModelKeyType = computed(() => {
   return usingPlugin.value?.modelType || Number(configObj?.value.modelInfo.keyType)
 })
@@ -307,6 +304,105 @@ const savedFiles = computed(() => {
   }
 })
 
+const parseSubmittedFiles = (value: string) => {
+  if (!value) return []
+  try {
+    const parsed = JSON.parse(value)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+const getFileExtension = (nameOrUrl = '') => {
+  const cleanValue = nameOrUrl.split('?')[0]
+  const matched = cleanValue.match(/\.([a-z0-9]+)$/i)
+  return matched?.[1]?.toLowerCase() || ''
+}
+
+const isImageGenerationPrompt = (value: string) => {
+  return /(生成|画|绘制|create|generate|draw|设计).*(图片|图像|海报|logo|插画|image|picture|poster|illustration)/i.test(
+    value
+  )
+}
+
+const isImageEditPrompt = (value: string) => {
+  return /(修改|编辑|替换|去掉|保留|换成|扩图|重绘|edit|modify|replace|remove|inpaint|outpaint)/i.test(
+    value
+  )
+}
+
+const buildResponsesExtraParam = (
+  base: Record<string, any>,
+  context: {
+    prompt: string
+    usingNetwork: boolean
+    imageUrl: string
+    files: any[]
+  }
+) => {
+  const files = context.files.map(file => ({
+    name: file.name || file.url || 'document',
+    url: file.url,
+    type: file.type || 'document',
+    extension: getFileExtension(file.name || file.url || ''),
+  }))
+  const hasInputImages = Boolean(context.imageUrl)
+  const hasDocuments = files.some(file => file.type === 'document')
+  const wantsImage = isImageGenerationPrompt(context.prompt)
+  const scenario = context.usingNetwork
+    ? 'realtime'
+    : wantsImage && hasInputImages && isImageEditPrompt(context.prompt)
+      ? 'image_edit'
+      : wantsImage
+        ? 'image_generation'
+        : hasDocuments
+          ? 'file_analysis'
+          : hasInputImages
+            ? 'vision'
+            : 'chat'
+
+  const responses: Record<string, any> = {
+    ...(base.responses || base.responseOptions || base.response_options || {}),
+  }
+
+  if (context.usingNetwork && responses.useHostedWebSearch !== false) {
+    responses.useHostedWebSearch = true
+  }
+
+  if (
+    (scenario === 'image_generation' || scenario === 'image_edit') &&
+    responses.useImageGenerationTool !== false
+  ) {
+    responses.useImageGenerationTool = true
+    responses.image_generation = {
+      action: scenario === 'image_edit' ? 'edit' : 'auto',
+      size: base.size || 'auto',
+      quality: base.quality || 'auto',
+      background: base.background || 'auto',
+      ...(responses.image_generation || responses.imageGeneration || {}),
+    }
+  }
+
+  return {
+    ...base,
+    responseContext: {
+      scenario,
+      usingNetwork: context.usingNetwork,
+      hasInputImages,
+      hasDocuments,
+      files,
+      model: activeModel.value,
+      attachmentSummary: {
+        images: context.imageUrl ? context.imageUrl.split(',').filter(Boolean).length : 0,
+        documents: files.filter(file => file.type === 'document').length,
+        pdfs: files.filter(file => file.extension === 'pdf').length,
+      },
+    },
+    responses,
+  }
+}
+
 const handleSubmit = async (index?: number) => {
   if (isStreamIn.value) {
     return
@@ -383,6 +479,14 @@ const handleSubmit = async (index?: number) => {
     } catch (error) {}
   }
 
+  const submittedFiles = parseSubmittedFiles(submittedFileUrl)
+  const updatedExtraParam = buildResponsesExtraParam(extraParam.value, {
+    prompt: msg,
+    usingNetwork: Boolean(usingNetwork.value),
+    imageUrl,
+    files: submittedFiles,
+  })
+
   await chatStore.setPrompt('')
   inputRef.value.style.height = '1rem' // 使用初始高度
 
@@ -394,7 +498,7 @@ const handleSubmit = async (index?: number) => {
     modelType: useModelType,
     modelAvatar: modelAvatar,
     appId: appId,
-    extraParam: extraParam.value,
+    extraParam: updatedExtraParam,
     fileUrl: submittedFileUrl,
     imageUrl: imageUrl,
     pluginParam: usingPlugin.value?.parameters,

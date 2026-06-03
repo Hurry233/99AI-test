@@ -18,7 +18,7 @@ export function fetchChatAPIProcess<T = any>(params: {
   drawId?: string
   customId?: string
   appId?: number
-  extraParam?: { size?: string }
+  extraParam?: Record<string, any>
   usingPluginId?: number
   options?: {
     groupId: number

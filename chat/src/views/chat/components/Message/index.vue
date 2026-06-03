@@ -43,6 +43,7 @@ interface Props {
   usingDeepThinking?: boolean
   usingMcpTool?: boolean
   reasoningText?: string
+  responseMeta?: string
   taskId?: string
   isWorkflowMessage?: boolean
   nodeType?: string
@@ -165,6 +166,7 @@ function handleRegenerate() {
           :usingDeepThinking="usingDeepThinking"
           :usingMcpTool="usingMcpTool"
           :reasoningText="reasoningText"
+          :responseMeta="responseMeta"
           :isWorkflowMessage="isWorkflowMessage"
           @regenerate="handleRegenerate"
           @copy="handleCopy"
