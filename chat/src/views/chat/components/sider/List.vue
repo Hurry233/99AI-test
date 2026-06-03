@@ -13,7 +13,7 @@ import {
 } from '@/store'
 import { dialog } from '@/utils/dialog'
 import { message } from '@/utils/message'
-import { ApplicationTwo, Delete, Down, Unlike, Up } from '@icon-park/vue-next'
+import { Delete, Down, Unlike, Up } from '@icon-park/vue-next'
 import { computed, inject, ref, watch } from 'vue'
 import ListItem from './ListItem.vue'
 
@@ -267,7 +267,7 @@ const isAppsHovered = ref(false)
             <Up v-else theme="outline" size="20" />
           </button>
           <div
-            class="relative flex items-center gap-3 px-3 py-1 break-all rounded-lg cursor-pointer hover:bg-white group dark:hover:bg-gray-800 font-medium text-sm 'text-gray-700', 'dark:bg-gray-900', 'dark:text-gray-400'"
+            class="relative flex items-center gap-3 px-3 py-2 mt-2 break-all rounded-xl cursor-pointer bg-gradient-to-r from-primary-50 to-blue-50 text-primary-700 hover:from-primary-100 hover:to-blue-100 group dark:from-gray-800 dark:to-gray-850 dark:text-primary-300 font-semibold text-sm ring-1 ring-primary-100 dark:ring-gray-700"
             @click="
               () => {
                 useGlobalStore.updateShowAppListComponent(true)
@@ -277,12 +277,18 @@ const isAppsHovered = ref(false)
               }
             "
           >
-            <ApplicationTwo
-              theme="outline"
-              size="25"
-              class="ml-1 mr-1 text-sm my-1 text-gray-600"
-            />
-            {{ t('chat.appSquare') }}
+            <span
+              class="ml-1 mr-1 flex h-7 w-7 items-center justify-center rounded-lg bg-primary-100 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300"
+              aria-hidden="true"
+            >
+              ✦
+            </span>
+            <span class="flex flex-col leading-tight">
+              <span>{{ t('chat.agentWorkspace') }}</span>
+              <span class="text-[11px] font-normal text-gray-500 dark:text-gray-400">{{
+                t('chat.agentWorkspaceDesc')
+              }}</span>
+            </span>
           </div>
         </div>
 

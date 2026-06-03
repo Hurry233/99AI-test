@@ -1,6 +1,6 @@
 <route lang="yaml">
 meta:
-  title: 应用管理
+  title: Agent管理
 </route>
 
 <script lang="ts" setup>
@@ -80,24 +80,24 @@ meta:
   });
 
   const rules = reactive<FormRules>({
-    catId: [{ required: true, message: '请选择App分类', trigger: 'change' }],
-    name: [{ required: true, message: '请填写App名称', trigger: 'blur' }],
-    preset: [{ required: false, message: '请填写App预设信息', trigger: 'blur' }],
-    des: [{ required: true, message: '请填写App描述', trigger: 'blur' }],
-    coverImg: [{ required: false, message: '请填写App封面图片地址', trigger: 'blur' }],
-    demoData: [{ required: false, message: '请填写App演示数据', trigger: 'blur' }],
+    catId: [{ required: true, message: '请选择Agent能力分类', trigger: 'change' }],
+    name: [{ required: true, message: '请填写Agent名称', trigger: 'blur' }],
+    preset: [{ required: false, message: '请填写Agent预设信息', trigger: 'blur' }],
+    des: [{ required: true, message: '请填写Agent描述', trigger: 'blur' }],
+    coverImg: [{ required: false, message: '请填写Agent封面图片地址', trigger: 'blur' }],
+    demoData: [{ required: false, message: '请填写Agent演示数据', trigger: 'blur' }],
     isGPTs: [{ required: true, message: '是否GPTs', trigger: 'blur' }],
     gizmoID: [{ required: false, message: 'GPTs 的ID', trigger: 'blur' }],
     order: [{ required: false, message: '请填写排序ID', trigger: 'blur' }],
-    status: [{ required: true, message: '请选择App状态', trigger: 'change' }],
-    isFixedModel: [{ required: true, message: '请选择App是否固定模型', trigger: 'blur' }],
-    appModel: [{ required: false, message: '请选择App使用的模型', trigger: 'change' }],
+    status: [{ required: true, message: '请选择Agent状态', trigger: 'change' }],
+    isFixedModel: [{ required: true, message: '请选择Agent是否固定模型', trigger: 'blur' }],
+    appModel: [{ required: false, message: '请选择Agent使用的模型', trigger: 'change' }],
     isFlowith: [{ required: true, message: '请选择是否使用flowith模型', trigger: 'blur' }],
     flowithId: [{ required: false, message: '请填写flowith模型ID', trigger: 'blur' }],
     flowithName: [{ required: false, message: '请填写flowith模型名称', trigger: 'blur' }],
     flowithKey: [{ required: false, message: '请填写flowith模型密钥', trigger: 'blur' }],
-    backgroundImg: [{ required: false, message: '请填写App背景图URL', trigger: 'blur' }],
-    prompt: [{ required: false, message: '请填写App提问模版', trigger: 'blur' }],
+    backgroundImg: [{ required: false, message: '请填写Agent背景图URL', trigger: 'blur' }],
+    prompt: [{ required: false, message: '请填写Agent提问模版', trigger: 'blur' }],
   });
 
   const tableData = ref([]);
@@ -109,7 +109,7 @@ meta:
   const catList: Ref<CatItem[]> = ref([]);
 
   const dialogTitle = computed(() => {
-    return activeAppCatId.value ? '更新应用' : '新增应用';
+    return activeAppCatId.value ? '更新Agent' : '新增Agent';
   });
 
   const dialogButton = computed(() => {
@@ -323,13 +323,13 @@ meta:
   async function reuploadAppAvatar() {
     if (formPackage.coverImg) {
       try {
-        ElMessage.info('正在重新上传应用图标...');
+        ElMessage.info('正在重新上传Agent图标...');
         const originalValue = formPackage.coverImg; // 保存原始值
         const file = await downloadFile(formPackage.coverImg);
         uploadFile(file, handleAvatarSuccess, originalValue);
       } catch (error) {
-        console.error('下载应用图标文件失败', error);
-        ElMessage.error('重新上传应用图标失败，请检查链接是否有效');
+        console.error('下载Agent图标文件失败', error);
+        ElMessage.error('重新上传Agent图标失败，请检查链接是否有效');
       }
     }
   }
@@ -363,7 +363,7 @@ meta:
         // 如果是重新上传场景（有原始值），显示成功消息
         if (originalValue) {
           if (successHandler === handleAvatarSuccess) {
-            ElMessage.success('重新上传应用图标成功');
+            ElMessage.success('重新上传Agent图标成功');
           } else if (successHandler === handleBackgroundSuccess) {
             ElMessage.success('重新上传背景图片成功');
           }
@@ -468,12 +468,12 @@ meta:
           params.catId = params.catId.join(',') as any;
           isUserApp.value && Object.assign(params, { status: userAppStatus.value });
           await ApiApp.updateApp(params);
-          ElMessage({ type: 'success', message: '更新应用成功！' });
+          ElMessage({ type: 'success', message: '更新Agent成功！' });
         } else {
           const newApp = { ...formPackage, prompt: finalPrompt }; // 使用处理后的 prompt
           newApp.catId = newApp.catId.join(',') as any;
           await ApiApp.createApp(newApp);
-          ElMessage({ type: 'success', message: '创建新的应用成功！' });
+          ElMessage({ type: 'success', message: '创建新的Agent成功！' });
         }
         visible.value = false;
         queryAppList();
@@ -481,7 +481,7 @@ meta:
     });
   }
 
-  // 获取分类名称
+  // 获取能力分类名称
   function getCategoryName(catId: string): string {
     const category = catList.value.find((item) => item.id.toString() === catId);
     return category ? category.name : '';
@@ -733,29 +733,29 @@ meta:
   <div>
     <PageHeader>
       <template #title>
-        <div class="flex items-center gap-4">应用配置</div>
+        <div class="flex items-center gap-4">Agent配置</div>
       </template>
       <template #content>
         <div class="text-sm/6">
-          <div>应用一旦创建，可能会被多处使用，请保持规范命名分类，后续尽量变更而不是删除。</div>
+          <div>Agent一旦创建，可能会被多处使用，请保持规范命名分类，后续尽量变更而不是删除。</div>
           <div>
-            可自行选择应用是否固定模型。GPTs 需单独在特殊模型中配置 gpts 模型，并自行搜索填写
+            可自行选择Agent是否固定模型。GPTs 需单独在特殊模型中配置 gpts 模型，并自行搜索填写
             gizmoID（例如：g-alKfVrz9K）。
           </div>
         </div>
       </template>
       <HButton outline @click="visible = true">
         <SvgIcon name="ic:baseline-plus" />
-        新增应用
+        新增Agent
       </HButton>
     </PageHeader>
 
     <page-main>
       <el-form ref="formRef" :inline="true" :model="formInline">
-        <el-form-item label="App分类" prop="catId">
+        <el-form-item label="能力分类" prop="catId">
           <el-select
             v-model="formInline.catId"
-            placeholder="请选择App分类"
+            placeholder="请选择Agent能力分类"
             clearable
             style="width: 240px"
           >
@@ -768,10 +768,10 @@ meta:
           </el-select>
         </el-form-item>
 
-        <el-form-item label="App名称" prop="name">
+        <el-form-item label="Agent名称" prop="name">
           <el-input
             v-model="formInline.name"
-            placeholder="App名称[模糊搜索]"
+            placeholder="Agent名称[模糊搜索]"
             clearable
             @keydown.enter.prevent="queryAppList"
           />
@@ -786,12 +786,12 @@ meta:
 
     <page-main style="width: 100%">
       <el-table v-loading="loading" border :data="tableData" style="width: 100%" size="large">
-        <el-table-column prop="coverImg" label="应用封面" width="100">
+        <el-table-column prop="coverImg" label="Agent封面" width="100">
           <template #default="scope">
             <el-image style="height: 50px" :src="scope.row.coverImg" fit="fill" />
           </template>
         </el-table-column>
-        <el-table-column prop="catName" label="应用分类" width="120">
+        <el-table-column prop="catName" label="Agent分类" width="120">
           <template #default="scope">
             <el-tooltip
               v-if="scope.row.catName && scope.row.catName.includes(',')"
@@ -811,8 +811,8 @@ meta:
             <span v-else>{{ scope.row.catName }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="name" label="应用名称" width="120" />
-        <el-table-column prop="status" label="应用状态" width="100">
+        <el-table-column prop="name" label="Agent名称" width="120" />
+        <el-table-column prop="status" label="Agent状态" width="100">
           <template #default="scope">
             <el-tag :type="scope.row.status === 1 ? 'success' : 'danger'">
               {{ QUESTION_STATUS_MAP[scope.row.status] }}
@@ -826,7 +826,7 @@ meta:
             </el-tag>
           </template>
         </el-table-column> -->
-        <!-- <el-table-column prop="public" label="应用创建角色" width="120">
+        <!-- <el-table-column prop="public" label="Agent创建角色" width="120">
           <template #default="scope">
             <el-tag :type="scope.row.role === 'system' ? 'success' : 'info'">
               {{ scope.row.role === 'system' ? '系统' : '用户' }}
@@ -881,13 +881,13 @@ meta:
             </el-button>
             <el-popconfirm
               v-if="scope.row.role === 'system'"
-              title="确认删除此应用么?"
+              title="确认删除此Agent么?"
               width="200"
               icon-color="red"
               @confirm="handleDeletePackage(scope.row)"
             >
               <template #reference>
-                <el-button link type="danger" size="small"> 删除应用 </el-button>
+                <el-button link type="danger" size="small"> 删除Agent </el-button>
               </template>
             </el-popconfirm>
           </template>
@@ -923,10 +923,10 @@ meta:
       >
         <el-row :gutter="20">
           <el-col :span="10">
-            <el-form-item label="App名称" prop="name">
-              <el-input v-model="formPackage.name" placeholder="请填写App名称" />
+            <el-form-item label="Agent名称" prop="name">
+              <el-input v-model="formPackage.name" placeholder="请填写Agent名称" />
             </el-form-item>
-            <el-form-item v-if="!isUserApp" label="App状态" prop="status">
+            <el-form-item v-if="!isUserApp" label="Agent状态" prop="status">
               <el-switch v-model="formPackage.status" :active-value="1" :inactive-value="0" />
             </el-form-item>
             <el-form-item label="排序ID" prop="order">
@@ -934,7 +934,7 @@ meta:
             </el-form-item>
           </el-col>
           <el-col :span="14">
-            <el-form-item label="App分类" prop="catId">
+            <el-form-item label="能力分类" prop="catId">
               <div class="category-selector" style="height: 100%">
                 <div class="selected-categories mb-2">
                   <el-tag
@@ -969,11 +969,11 @@ meta:
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="App描述" prop="des">
+            <el-form-item label="Agent描述" prop="des">
               <el-input
                 v-model="formPackage.des"
                 type="textarea"
-                placeholder="请填写App介绍信息..."
+                placeholder="请填写Agent介绍信息..."
                 :rows="3"
               />
             </el-form-item>
@@ -983,17 +983,17 @@ meta:
               <el-input
                 v-model="formPackage.demoData"
                 type="textarea"
-                placeholder="请填写App的demo示例数据..."
+                placeholder="请填写Agent的 demo 示例数据..."
                 :rows="3"
               />
             </el-form-item>
           </el-col>
           <el-col :span="24">
-            <el-form-item v-if="specialModelType !== 'gpts'" label="App预设" prop="preset">
+            <el-form-item v-if="specialModelType !== 'gpts'" label="Agent预设" prop="preset">
               <el-input
                 v-model="formPackage.preset"
                 type="textarea"
-                placeholder="请填写App预设信息..."
+                placeholder="请填写Agent预设信息..."
                 :rows="3"
               />
             </el-form-item>
@@ -1057,7 +1057,7 @@ meta:
             <!-- Placeholder Column -->
           </el-col>
           <el-col :span="12">
-            <el-form-item label="应用图标" prop="coverImg">
+            <el-form-item label="Agent图标" prop="coverImg">
               <el-input v-model="formPackage.coverImg" placeholder="填写或上传图标" clearable>
                 <template #append>
                   <!-- Upload Component -->
@@ -1102,7 +1102,7 @@ meta:
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="App背景图" prop="backgroundImg">
+            <el-form-item label="Agent背景图" prop="backgroundImg">
               <el-input
                 v-model="formPackage.backgroundImg"
                 placeholder="填写或上传背景图"

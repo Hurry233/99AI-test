@@ -81,8 +81,10 @@
     "clearAllNonFavoriteConversations": "清空所有非收藏的对话？",
     "more": "更多",
     "collapse": "折叠",
-    "myApps": "我的应用",
-    "appSquare": "应用广场",
+    "myApps": "我的 Agent",
+    "appSquare": "Agent 中心",
+    "agentWorkspace": "Agent 工作台",
+    "agentWorkspaceDesc": "编排任务、研究、代码与文件",
     "favorites": "收藏",
     "todayConversations": "今日对话",
     "historyConversations": "历史对话",
@@ -126,14 +128,14 @@
     "imageToImage": "以图生图",
     "faceConsistency": "人脸一致",
     "styleConsistency": "风格一致",
-    "selectAppOrTopic": "选择应用或话题快速对话"
+    "selectAppOrTopic": "选择 Agent 或输入任务，开始多步骤协作"
   },
   "app": {
     "sampleTemplate": "示例模板",
-    "exploreInfinitePossibilities": "探索无限可能，与 AI 一同开创智慧未来",
-    "searchAppNameQuickFind": "搜索应用名称、快速查找应用...",
-    "allCategories": "全部分类",
-    "noModelConfigured": "管理员未配置特定应用模型、请联系管理员配置~"
+    "exploreInfinitePossibilities": "让 Agent 帮你研究、写作、编码、分析文件并交付成果",
+    "searchAppNameQuickFind": "搜索 Agent、能力或任务场景...",
+    "allCategories": "全部能力",
+    "noModelConfigured": "管理员未配置该 Agent 的专属模型，请联系管理员配置~"
   },
   "setting": {
     "setting": "设置",

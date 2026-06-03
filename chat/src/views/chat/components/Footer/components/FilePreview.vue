@@ -12,8 +12,8 @@ interface Props {
   dataBase64List: string[] // 上传文件的base64预览列表
   fileList: File[] // 上传的文件列表
   savedFiles: FileItem[] // 已保存的文件列表
-  isSelectedApp: boolean // 是否选中了应用
-  selectedApp: any // 选中的应用
+  isSelectedApp: boolean // 是否选中了 Agent
+  selectedApp: any // 选中的 Agent
 }
 
 const props = defineProps<Props>()
@@ -52,7 +52,7 @@ watch(
   >
     <!-- 上传的文件和图片显示区域 -->
     <div class="self-start w-full rounded-t-2xl mt-2">
-      <!-- 选中的应用 -->
+      <!-- 选中的 Agent -->
       <div v-if="isSelectedApp" class="relative w-full mb-2">
         <div
           v-if="isSelectedApp"
@@ -64,7 +64,7 @@ watch(
             <img
               v-if="selectedApp.coverImg"
               :src="selectedApp.coverImg"
-              alt="Cover Image"
+              alt="Agent icon"
               class="w-8 h-8 rounded-full flex justify-start"
             />
             <span

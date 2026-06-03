@@ -1196,7 +1196,7 @@ async function handleClick(box: { appId?: number; prompt: any }) {
 
 // ============== 方法定义 ==============
 
-// Toggle AppList visibility
+// Toggle Agent workspace visibility
 const toggleAppList = () => {
   useGlobalStore.updateShowAppListComponent(!useGlobalStore.showAppListComponent)
 }
@@ -1206,20 +1206,20 @@ const toggleTextEditor = () => {
   useGlobalStore.updateTextEditor(!useGlobalStore.showTextEditor)
 }
 
-// Handle the 'run-app' event from AppList
+// Handle the 'run-app' event from Agent workspace
 async function handleRunAppFromList(app: any) {
   showAppListComponent.value = false // Hide AppList
   await chatStore.addNewChatGroup(Number(app.id))
   // No need to check membership here, AppList handled it
 }
 
-// Handle the 'show-member-dialog' event from AppList
+// Handle the 'show-member-dialog' event from Agent workspace
 function handleShowMemberDialogFromList() {
   useGlobalStore.updateShowAppListComponent(false) // Hide AppList
   useGlobalStore.updateSettingsDialog(true, DIALOG_TABS.MEMBER)
 }
 
-// Handle the 'run-app-with-data' event from AppList (via Modal)
+// Handle the 'run-app-with-data' event from Agent workspace (via Modal)
 async function handleRunAppWithData({ app, formattedData }: { app: any; formattedData: string }) {
   // Ensure AppList is hidden (might already be hidden by modal logic)
   useGlobalStore.updateShowAppListComponent(false)
