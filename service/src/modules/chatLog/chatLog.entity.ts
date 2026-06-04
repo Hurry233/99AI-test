@@ -148,7 +148,4 @@ export class ChatLogEntity extends BaseEntity {
   @Column({ comment: '模型网关 run trace', nullable: true, type: 'mediumtext' })
   runTrace: string;
 
-  @Column({ comment: '响应结构化条目', nullable: true, type: 'mediumtext' })
-  responseItems: string;
-
 }

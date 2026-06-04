@@ -181,7 +181,6 @@ function handleRegenerate() {
           :usingMcpTool="usingMcpTool"
           :reasoningText="reasoningText"
           :responseMeta="responseMeta"
-          :responseItems="responseItems"
           :isWorkflowMessage="isWorkflowMessage"
           @regenerate="handleRegenerate"
           @copy="handleCopy"

@@ -420,8 +420,9 @@ export class ChatLogService {
     });
   }
 
-  private parseResponseItems(responseItems?: string) {
+  private parseResponseItems(responseItems?: string | AgentTraceItem[]) {
     if (!responseItems) return [];
+    if (Array.isArray(responseItems)) return responseItems;
     try {
       const parsed = JSON.parse(responseItems);
       return Array.isArray(parsed) ? parsed : [];

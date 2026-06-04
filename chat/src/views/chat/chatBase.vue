@@ -524,16 +524,14 @@ const onConversation = async ({
   }
 
   const handleStreamResponseModel = async () => {
-    // 响应数据存储变量
-    let fullText = '' // 存储完整响应文本
-    let fullContent = '' // 存储额外内容（如canvas内容）
+    let fullText = ''
+    let fullContent = ''
     let networkSearchResult = ''
     let tool_calls = ''
     let promptReference = ''
-    let responseItems: Chat.ArtifactResponseItem[] = []
     let assistantLogId = ''
     let mcpToolUse = ''
-    let finishReason = '' // 完成原因标识
+    let finishReason = ''
     let full_json = ''
     let fileVectorResult = ''
     let responseMeta = ''
@@ -542,23 +540,18 @@ const onConversation = async ({
     let responseItems: ResponseItem[] = []
     let artifacts: any[] = []
     let toolSummary = ''
-    // 工作流相关变量
     let nodeType = ''
     let stepName = ''
     let workflowProgress = 0
 
-    // 缓冲区及显示控制变量
-    let textBuffer = '' // 文本缓冲区
-    let reasoningBuffer = '' // 推理文本缓冲区
-    let displayedText = '' // 已显示的文本
-    let displayedReasoningText = '' // 已显示的推理文本
-    let fullReasoningText = '' // 完整推理文本
-    let displayTimer: ReturnType<typeof setInterval> | null = null // 显示定时器
-    let isStreamActive = true // 流是否活跃标记
-    let lastUpdateTime = Date.now() // 最近一次数据更新时间
-
-    // 检查是否启用了缓存和打字效果
-    // const isCacheEnabled = useGlobalStore.isCacheEnabled
+    let textBuffer = ''
+    let reasoningBuffer = ''
+    let displayedText = ''
+    let displayedReasoningText = ''
+    let fullReasoningText = ''
+    let displayTimer: ReturnType<typeof setInterval> | null = null
+    let isStreamActive = true
+    let lastUpdateTime = Date.now()
     const isCacheEnabled = isStreamCacheEnabled.value
 
     // 五档速度定义（单位：毫秒）
@@ -1518,7 +1511,6 @@ provide('tryParseJson', tryParseJson)
                     :usingDeepThinking="false"
                     :useFileSearch="item.useFileSearch"
                     :tool_calls="item.tool_calls"
-                    :responseItems="item.responseItems"
                     :artifacts="item.artifacts"
                     :attachments="item.attachments"
                     :runId="item.runId"
