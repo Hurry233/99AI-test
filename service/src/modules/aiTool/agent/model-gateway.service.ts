@@ -5,8 +5,17 @@ import OpenAI from 'openai';
 
 @Injectable()
 export class ModelGatewayService {
-  shouldUseResponsesApi(inputs: { extraParam?: any; modelType?: any; model?: string }): boolean {
-    return Boolean(inputs?.extraParam?.useResponsesApi || inputs?.extraParam?.tools?.length);
+  shouldUseResponsesApi(inputs: {
+    protocol?: 'responses' | 'chat_completions';
+    extraParam?: any;
+    modelType?: any;
+    model?: string;
+  }): boolean {
+    return Boolean(
+      inputs?.protocol === 'responses' ||
+        inputs?.extraParam?.useResponsesApi ||
+        inputs?.extraParam?.tools?.length,
+    );
   }
 
   buildResponsesRequest(messagesHistory: any[], inputs: any): Record<string, any> {

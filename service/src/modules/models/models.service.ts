@@ -165,6 +165,15 @@ export class ModelsService {
       isMcpTool,
       systemPrompt,
       systemPromptType,
+      supportsResponses,
+      supportsVision,
+      supportsImageGeneration,
+      supportsTools,
+      supportsJsonSchema,
+      supportsReasoning,
+      supportsFiles,
+      contextWindow,
+      maxOutputTokens,
     } = minOrderModel;
 
     return {
@@ -184,6 +193,16 @@ export class ModelsService {
         isMcpTool,
         systemPrompt,
         systemPromptType,
+        capabilities: {
+          vision: Boolean(supportsVision || isImageUpload > 0),
+          imageGeneration: Boolean(supportsImageGeneration),
+          tools: Boolean(supportsTools || isMcpTool),
+          jsonSchema: Boolean(supportsJsonSchema),
+          reasoning: Boolean(supportsReasoning || deepThinkingType > 0),
+          files: Boolean(supportsFiles || isFileUpload > 0),
+          contextWindow: contextWindow || minOrderModel.maxModelTokens,
+          maxOutputTokens: maxOutputTokens || minOrderModel.max_tokens,
+        },
       },
     };
   }
@@ -294,6 +313,15 @@ export class ModelsService {
               deepThinkingType,
               deductDeepThink,
               isMcpTool,
+              supportsResponses,
+              supportsVision,
+              supportsImageGeneration,
+              supportsTools,
+              supportsJsonSchema,
+              supportsReasoning,
+              supportsFiles,
+              contextWindow,
+              maxOutputTokens,
             } = t;
             return {
               modelName,
@@ -310,6 +338,16 @@ export class ModelsService {
               deepThinkingType,
               deductDeepThink,
               isMcpTool,
+              capabilities: {
+                vision: Boolean(supportsVision || isImageUpload > 0),
+                imageGeneration: Boolean(supportsImageGeneration),
+                tools: Boolean(supportsTools || isMcpTool),
+                jsonSchema: Boolean(supportsJsonSchema),
+                reasoning: Boolean(supportsReasoning || deepThinkingType > 0),
+                files: Boolean(supportsFiles || isFileUpload > 0),
+                contextWindow: contextWindow || t.maxModelTokens,
+                maxOutputTokens: maxOutputTokens || t.max_tokens,
+              },
             };
           })
           .reduce((map, obj) => map.set(obj.modelName, obj), new Map())
@@ -334,6 +372,13 @@ export class ModelsService {
       })
       .where('id = :id', { id })
       .execute();
+  }
+
+  async getEnabledModels() {
+    return await this.modelsEntity.find({
+      where: { status: true },
+      order: { modelOrder: 'ASC' },
+    });
   }
 
   /* 获取所有key */
@@ -407,6 +452,15 @@ export class ModelsService {
         systemPrompt: modelDetail.systemPrompt,
         systemPromptType: modelDetail.systemPromptType,
         drawingType: modelDetail.drawingType,
+        supportsResponses: modelDetail.supportsResponses,
+        supportsVision: modelDetail.supportsVision,
+        supportsImageGeneration: modelDetail.supportsImageGeneration,
+        supportsTools: modelDetail.supportsTools,
+        supportsJsonSchema: modelDetail.supportsJsonSchema,
+        supportsReasoning: modelDetail.supportsReasoning,
+        supportsFiles: modelDetail.supportsFiles,
+        contextWindow: modelDetail.contextWindow,
+        maxOutputTokens: modelDetail.maxOutputTokens,
       };
     } catch (error) {
       if (error instanceof HttpException) {

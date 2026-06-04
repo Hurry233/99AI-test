@@ -2,7 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AgentRunService } from '../aiTool/agent/agent-run.service';
 import { AgentTraceService } from '../aiTool/agent/agent-trace.service';
-import { ModelGatewayService } from '../aiTool/agent/model-gateway.service';
+import { ModelGatewayService as AgentModelGatewayService } from '../aiTool/agent/model-gateway.service';
 import { ToolExecutorService } from '../aiTool/agent/tool-executor.service';
 import { ToolRegistryService } from '../aiTool/agent/tool-registry.service';
 import { OpenAIChatService } from '../aiTool/chat/chat.service';
@@ -24,6 +24,7 @@ import { CramiPackageEntity } from '../crami/cramiPackage.entity';
 import { ConfigEntity } from '../globalConfig/config.entity';
 import { GlobalConfigService } from '../globalConfig/globalConfig.service';
 import { MailerService } from '../mailer/mailer.service';
+import { ModelGatewayService } from '../models/model-gateway.service';
 import { ModelsEntity } from '../models/models.entity';
 import { ModelsService } from '../models/models.service';
 import { PluginEntity } from '../plugin/plugin.entity';
@@ -81,9 +82,10 @@ import { ChatService } from './chat.service';
     BadWordsService,
     ChatGroupService,
     ModelsService,
+    ModelGatewayService,
     OpenAIChatService,
     AgentRunService,
-    ModelGatewayService,
+    AgentModelGatewayService,
     ToolRegistryService,
     ToolExecutorService,
     AgentTraceService,

@@ -437,6 +437,8 @@ export class AgentRunService {
       timeout: any;
       temperature: any;
       max_tokens?: any;
+      protocol?: 'responses' | 'chat_completions';
+      gatewayTrace?: any;
       extraParam?: any;
       searchResults?: any[];
       images?: string[];
@@ -452,6 +454,8 @@ export class AgentRunService {
       timeout,
       temperature,
       max_tokens,
+      protocol,
+      gatewayTrace,
       searchResults,
       images,
       extraParam,
@@ -469,6 +473,8 @@ export class AgentRunService {
       result,
     );
 
+    result.gatewayTrace = gatewayTrace;
+
     // 步骤2: 处理OpenAI聊天API调用
     await this.handleOpenAIChat(
       processedMessages,
@@ -479,6 +485,7 @@ export class AgentRunService {
         timeout,
         temperature,
         max_tokens,
+        protocol,
         extraParam,
         abortController,
         onProgress,
@@ -507,6 +514,8 @@ export class AgentRunService {
       timeout: any;
       proxyUrl: any;
       modelAvatar?: any;
+      protocol?: 'responses' | 'chat_completions';
+      gatewayTrace?: any;
       usingDeepThinking?: boolean;
       usingMcpTool?: boolean;
       isMcpTool?: boolean;
@@ -538,6 +547,8 @@ export class AgentRunService {
       timeout,
       proxyUrl,
       modelAvatar,
+      protocol,
+      gatewayTrace,
       usingDeepThinking,
       usingNetwork,
       extraParam: explicitExtraParam,
@@ -620,6 +631,8 @@ export class AgentRunService {
           timeout,
           temperature,
           max_tokens,
+          protocol,
+          gatewayTrace,
           extraParam,
           searchResults,
           images,
@@ -831,6 +844,7 @@ export class AgentRunService {
       timeout: any;
       temperature: any;
       max_tokens?: any;
+      protocol?: 'responses' | 'chat_completions';
       extraParam?: any;
       abortController: AbortController;
       onProgress?: (data: any) => void;

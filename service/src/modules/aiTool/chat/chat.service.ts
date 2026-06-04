@@ -403,6 +403,8 @@ export class OpenAIChatService {
       timeout: any;
       temperature: any;
       max_tokens?: any;
+      protocol?: 'responses' | 'chat_completions';
+      gatewayTrace?: any;
       extraParam?: any;
       searchResults?: any[];
       images?: string[];
@@ -418,6 +420,8 @@ export class OpenAIChatService {
       timeout,
       temperature,
       max_tokens,
+      protocol,
+      gatewayTrace,
       searchResults,
       images,
       abortController,
@@ -434,7 +438,27 @@ export class OpenAIChatService {
       result,
     );
 
-    // 步骤2: 处理OpenAI聊天API调用
+    result.gatewayTrace = gatewayTrace;
+
+    // 步骤2: 按模型网关选择的协议处理调用
+    if (protocol === 'responses') {
+      await this.handleResponses(
+        processedMessages,
+        {
+          apiKey,
+          model,
+          proxyUrl,
+          timeout,
+          temperature,
+          max_tokens,
+          abortController,
+          onProgress,
+        },
+        result,
+      );
+      return;
+    }
+
     await this.handleOpenAIChat(
       processedMessages,
       {
@@ -471,6 +495,8 @@ export class OpenAIChatService {
       timeout: any;
       proxyUrl: any;
       modelAvatar?: any;
+      protocol?: 'responses' | 'chat_completions';
+      gatewayTrace?: any;
       usingDeepThinking?: boolean;
       usingMcpTool?: boolean;
       isMcpTool?: boolean;
@@ -490,6 +516,7 @@ export class OpenAIChatService {
     },
   ) {
     return this.agentRunService.run(messagesHistory, inputs);
+
   }
 
   async chatFree(prompt: string, systemMessage?: string, messagesHistory?: any[], imageUrl?: any) {
@@ -653,6 +680,82 @@ export class OpenAIChatService {
     }
 
     return processedMessages;
+  }
+
+  /**
+   * 处理 OpenAI Responses API 调用和流式响应。
+   */
+  private async handleResponses(
+    messagesHistory: any,
+    inputs: {
+      apiKey: any;
+      model: any;
+      proxyUrl: any;
+      timeout: any;
+      temperature: any;
+      max_tokens?: any;
+      abortController: AbortController;
+      onProgress?: (data: any) => void;
+    },
+    result: any,
+  ): Promise<void> {
+    const {
+      apiKey,
+      model,
+      proxyUrl,
+      timeout,
+      temperature,
+      max_tokens,
+      abortController,
+      onProgress,
+    } = inputs;
+
+    const openai = new OpenAI({
+      apiKey: apiKey,
+      baseURL: await correctApiBaseUrl(proxyUrl),
+      timeout: timeout,
+    });
+
+    try {
+      Logger.debug(
+        `Responses请求 - Messages: ${JSON.stringify(messagesHistory)}`,
+        'OpenAIChatService',
+      );
+
+      const stream = await (openai as any).responses.create(
+        {
+          model,
+          input: messagesHistory,
+          stream: true,
+          max_output_tokens: max_tokens,
+          temperature,
+        },
+        { signal: abortController.signal },
+      );
+
+      for await (const event of stream) {
+        if (abortController.signal.aborted) break;
+
+        const content =
+          event?.type === 'response.output_text.delta'
+            ? event.delta
+            : event?.delta?.text || event?.delta || '';
+
+        if (typeof content === 'string' && content) {
+          result.content = [
+            {
+              type: 'text',
+              text: content,
+            },
+          ];
+          result.full_content += content;
+          onProgress?.({ content: result.content });
+        }
+      }
+    } catch (error) {
+      Logger.error(`OpenAI Responses请求失败: ${handleError(error)}`, 'OpenAIChatService');
+      throw error;
+    }
   }
 
   /**
