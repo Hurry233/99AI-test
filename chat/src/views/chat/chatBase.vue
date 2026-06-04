@@ -525,6 +525,7 @@ const onConversation = async ({
     let finishReason = '' // 完成原因标识
     let full_json = ''
     let fileVectorResult = ''
+    let responseItems: Chat.AgentTraceItem[] = []
     // 工作流相关变量
     let nodeType = ''
     let stepName = ''
@@ -758,6 +759,7 @@ const onConversation = async ({
         networkSearchResult: networkSearchResult,
         fileVectorResult: fileVectorResult,
         tool_calls: tool_calls,
+        responseItems: responseItems,
         modelType: 1,
         modelName: useModelName,
         error: false,
@@ -854,6 +856,7 @@ const onConversation = async ({
                       networkSearchResult: networkSearchResult,
                       fileVectorResult: fileVectorResult,
                       tool_calls: tool_calls,
+                      responseItems: responseItems,
                       modelType: 1,
                       modelName: useModelName,
                       error: false,
@@ -902,6 +905,7 @@ const onConversation = async ({
                       networkSearchResult: networkSearchResult,
                       fileVectorResult: fileVectorResult,
                       tool_calls: tool_calls,
+                      responseItems: responseItems,
                       modelType: 1,
                       modelName: useModelName,
                       error: false,
@@ -930,6 +934,7 @@ const onConversation = async ({
                 if (jsonObj.networkSearchResult) networkSearchResult = jsonObj.networkSearchResult
                 if (jsonObj.fileVectorResult) fileVectorResult = jsonObj.fileVectorResult
                 if (jsonObj.tool_calls) tool_calls = jsonObj.tool_calls
+                if (jsonObj.responseItems) responseItems = jsonObj.responseItems
                 if (jsonObj.promptReference) promptReference = jsonObj.promptReference
                 if (jsonObj.chatId) {
                   assistantLogId = jsonObj.chatId
@@ -990,6 +995,7 @@ const onConversation = async ({
         networkSearchResult: networkSearchResult,
         fileVectorResult: fileVectorResult,
         tool_calls: tool_calls,
+        responseItems: responseItems,
         modelType: 1,
         modelName: useModelName,
         error: false,
@@ -1393,6 +1399,7 @@ provide('tryParseJson', tryParseJson)
                     :usingDeepThinking="false"
                     :useFileSearch="item.useFileSearch"
                     :tool_calls="item.tool_calls"
+                    :responseItems="item.responseItems"
                     @delete="handleDelete(item)"
                   />
                   <div class="sticky bottom-2 flex justify-center p-1 z-20">

@@ -1,6 +1,28 @@
 import { BaseEntity } from 'src/common/entity/baseEntity';
 import { Column, Entity } from 'typeorm';
 
+export type AgentTraceItemType =
+  | 'search'
+  | 'file_read'
+  | 'image_generation'
+  | 'error'
+  | 'artifact'
+  | 'citation'
+  | 'tool'
+  | 'text';
+
+export interface AgentTraceItem {
+  id: string;
+  type: AgentTraceItemType;
+  title?: string;
+  summary?: string;
+  status?: 'pending' | 'running' | 'success' | 'failed';
+  createdAt?: string;
+  updatedAt?: string;
+  data?: Record<string, any>;
+  error?: string;
+}
+
 @Entity({ name: 'chatlog' })
 export class ChatLogEntity extends BaseEntity {
   @Column({ comment: '用户ID' })
@@ -20,6 +42,9 @@ export class ChatLogEntity extends BaseEntity {
 
   @Column({ comment: '模型工具调用', nullable: true, type: 'text' })
   tool_calls: string;
+
+  @Column({ comment: '类型化执行过程/trace', nullable: true, type: 'json' })
+  responseItems: AgentTraceItem[];
 
   @Column({ comment: '图片Url', nullable: true, type: 'text' })
   imageUrl: string;

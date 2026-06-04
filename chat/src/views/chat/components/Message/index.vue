@@ -48,6 +48,7 @@ interface Props {
   nodeType?: string
   stepName?: string
   workflowProgress?: number
+  responseItems?: Chat.AgentTraceItem[]
 }
 
 // 添加计算属性判断是否是用户消息
@@ -165,6 +166,7 @@ function handleRegenerate() {
           :usingDeepThinking="usingDeepThinking"
           :usingMcpTool="usingMcpTool"
           :reasoningText="reasoningText"
+          :responseItems="responseItems"
           :isWorkflowMessage="isWorkflowMessage"
           @regenerate="handleRegenerate"
           @copy="handleCopy"

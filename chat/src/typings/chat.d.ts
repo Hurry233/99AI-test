@@ -42,6 +42,34 @@ declare namespace Chat {
     nodeType?: string
     stepName?: string
     workflowProgress?: number
+    responseItems?: AgentTraceItem[]
+    trace?: {
+      mode: 'full' | 'page' | 'none'
+      page?: number
+      size?: number
+      total: number
+      hasMore?: boolean
+    }
+  }
+
+  interface AgentTraceItem {
+    id: string
+    type:
+      | 'search'
+      | 'file_read'
+      | 'image_generation'
+      | 'error'
+      | 'artifact'
+      | 'citation'
+      | 'tool'
+      | 'text'
+    title?: string
+    summary?: string
+    status?: 'pending' | 'running' | 'success' | 'failed'
+    createdAt?: string
+    updatedAt?: string
+    data?: Record<string, any>
+    error?: string
   }
 
   interface History {

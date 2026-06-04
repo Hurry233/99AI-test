@@ -30,6 +30,7 @@ import 'highlight.js/styles/atom-one-light.css' // 更现代的浅色主题
 import MarkdownIt from 'markdown-it'
 import mila from 'markdown-it-link-attributes'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import AgentTraceTimeline from '../AgentTraceTimeline.vue'
 
 // 注册mermaid语言到highlight.js
 hljs.registerLanguage('mermaid', () => ({
@@ -99,6 +100,7 @@ interface Props {
   reasoningText?: string
   fileAnalysisProgress?: number
   useFileSearch?: boolean
+  responseItems?: Chat.AgentTraceItem[]
 }
 
 interface Emit {
@@ -560,6 +562,19 @@ async function handleMessage(item: string) {
   })
 }
 
+function handleTraceRerun(payload: { runId: number; failedItemId: string }) {
+  if (props.chatId) {
+    handleRegenerate?.(props.index, props.chatId)
+  }
+}
+
+async function handleTraceContinueEdit(item: Chat.AgentTraceItem) {
+  const url = item.data?.url || item.summary || ''
+  await onConversation?.({
+    msg: `继续编辑这个 artifact：${item.title || item.id}${url ? `\n${url}` : ''}`,
+  })
+}
+
 function handleCopy() {
   emit('copy')
 }
@@ -957,6 +972,15 @@ function openSingleImagePreview(src: string) {
 
 <template>
   <div class="text-wrap flex w-full flex-col px-1 group">
+    <AgentTraceTimeline
+      v-if="!isUserMessage"
+      :run-id="chatId"
+      :items="responseItems"
+      :loading="loading"
+      @rerun="handleTraceRerun"
+      @continue-edit="handleTraceContinueEdit"
+    />
+
     <!-- 网页搜索结果 -->
     <div v-if="!isUserMessage && (searchResult.length || (loading && usingNetwork))" class="mb-2">
       <div

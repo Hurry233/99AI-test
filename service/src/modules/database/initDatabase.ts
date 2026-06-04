@@ -224,6 +224,13 @@ async function runAllMigrations() {
         Logger.log(`迁移chatlog表${column}列时跳过: ${error.message}`, 'Database');
       }
     }
+
+    // 4. responseItems 从字符串 JSON 迁移为数据库 JSON 字段，承载类型化 trace 数组
+    try {
+      await migrateColumnType('chatlog', 'responseItems', 'JSON', conn);
+    } catch (error) {
+      Logger.log(`迁移chatlog表responseItems列时跳过: ${error.message}`, 'Database');
+    }
   } finally {
     await conn.end();
   }
