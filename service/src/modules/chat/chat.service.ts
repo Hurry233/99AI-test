@@ -12,6 +12,7 @@ import { Request, Response } from 'express';
 import { OpenAI } from 'openai';
 import { In, Repository } from 'typeorm';
 import { OpenAIChatService } from '../aiTool/chat/chat.service';
+import { ArtifactService } from '../artifact/artifact.service';
 import { AppEntity } from '../app/app.entity';
 import { AppService } from '../app/app.service';
 import { AutoReplyService } from '../autoReply/autoReply.service';
@@ -19,6 +20,7 @@ import { BadWordsService } from '../badWords/badWords.service';
 import { ChatGroupService } from '../chatGroup/chatGroup.service';
 import { ChatLogService } from '../chatLog/chatLog.service';
 import { GlobalConfigService } from '../globalConfig/globalConfig.service';
+import { ModelGatewayService } from '../models/model-gateway.service';
 import { ModelsService } from '../models/models.service';
 import { PluginEntity } from '../plugin/plugin.entity';
 import { UploadService } from '../upload/upload.service';
@@ -33,6 +35,7 @@ export class ChatService {
     @InjectRepository(PluginEntity)
     private readonly pluginEntity: Repository<PluginEntity>,
     private readonly openAIChatService: OpenAIChatService,
+    private readonly artifactService: ArtifactService,
     private readonly chatLogService: ChatLogService,
     private readonly userBalanceService: UserBalanceService,
     private readonly userService: UserService,
@@ -42,6 +45,7 @@ export class ChatService {
     private readonly globalConfigService: GlobalConfigService,
     private readonly chatGroupService: ChatGroupService,
     private readonly modelsService: ModelsService,
+    private readonly modelGatewayService: ModelGatewayService,
     private readonly appService: AppService,
   ) {}
 
@@ -56,6 +60,7 @@ export class ChatService {
       fileUrl,
       imageUrl,
       extraParam,
+      artifactReferences = [],
       model,
       action,
       modelName,
@@ -306,33 +311,53 @@ export class ChatService {
     if (!currentRequestModelKey) {
       Logger.debug('未找到当前模型key，切换至全局模型', 'ChatService');
       currentRequestModelKey = await this.modelsService.getCurrentModelKeyInfo(openaiBaseModel);
-      const groupInfo = await this.chatGroupService.getGroupInfoFromId(groupId);
 
-      // 假设 groupInfo.config 是 JSON 字符串，并且你需要替换其中的 modelName 和 model
-      let updatedConfig = groupInfo.config;
-      try {
-        const parsedConfig = JSON.parse(groupInfo.config);
-        if (parsedConfig.modelInfo) {
-          parsedConfig.modelInfo.modelName = currentRequestModelKey.modelName; // 替换为你需要的模型名称
-          parsedConfig.modelInfo.model = currentRequestModelKey.model; // 替换为你需要的模型
-          updatedConfig = JSON.stringify(parsedConfig);
+      if (groupId && currentRequestModelKey) {
+        const groupInfo = await this.chatGroupService.getGroupInfoFromId(groupId);
+        let updatedConfig = groupInfo.config;
+        try {
+          const parsedConfig = JSON.parse(groupInfo.config);
+          if (parsedConfig.modelInfo) {
+            parsedConfig.modelInfo.modelName = currentRequestModelKey.modelName;
+            parsedConfig.modelInfo.model = currentRequestModelKey.model;
+            updatedConfig = JSON.stringify(parsedConfig);
+          }
+        } catch (error) {
+          Logger.error('模型配置解析失败', error);
+          throw new HttpException('配置解析错误！', HttpStatus.BAD_REQUEST);
         }
-      } catch (error) {
-        Logger.error('模型配置解析失败', error);
-        throw new HttpException('配置解析错误！', HttpStatus.BAD_REQUEST);
-      }
 
-      await this.chatGroupService.update(
-        {
-          groupId,
-          title: groupInfo.title,
-          isSticky: false,
-          config: updatedConfig,
-          fileUrl: fileUrl,
-        },
-        req,
+        await this.chatGroupService.update(
+          {
+            groupId,
+            title: groupInfo.title,
+            isSticky: false,
+            config: updatedConfig,
+            fileUrl: fileUrl,
+          },
+          req,
+        );
+      }
+    }
+
+    if (!currentRequestModelKey) {
+      throw new HttpException(
+        '未找到可用模型配置，请联系管理员检查模型设置！',
+        HttpStatus.BAD_REQUEST,
       );
     }
+
+    const gatewayDecision = await this.modelGatewayService.selectForRun(currentRequestModelKey, {
+      kind:
+        Number(currentRequestModelKey?.keyType) === 2 ? 'image' : usingPluginId ? 'plugin' : 'chat',
+      requiresVision: Boolean(imageUrl),
+      requiresImageGeneration: Number(currentRequestModelKey?.keyType) === 2,
+      requiresTools: Boolean(usingMcpTool),
+      requiresReasoning: Boolean(usingDeepThinking),
+      requiresFiles: Boolean(fileUrl),
+      estimatedOutputTokens: Number(currentRequestModelKey?.max_tokens || 0),
+    });
+    currentRequestModelKey = gatewayDecision.model;
 
     const {
       deduct,
@@ -383,6 +408,23 @@ export class ChatService {
     const modelTimeout = (timeout || 300) * 1000;
     const temperature = Number(openaiTemperature) || 1;
     let promptReference = '';
+    let resolvedArtifactReferences = [];
+    let updatedExtraParam = extraParam || {};
+    const requestArtifactReferences = artifactReferences?.length
+      ? artifactReferences
+      : updatedExtraParam?.artifactReferences || [];
+    if (requestArtifactReferences?.length) {
+      const artifactIds = requestArtifactReferences.map(item => item.artifactId).filter(Boolean);
+      const artifacts = await this.artifactService.findByArtifactIds(artifactIds);
+      resolvedArtifactReferences = artifacts.map(artifact =>
+        this.artifactService.toResponseItem(artifact),
+      );
+      updatedExtraParam = {
+        ...updatedExtraParam,
+        artifactReferences: resolvedArtifactReferences,
+        imageEditInputs: this.artifactService.buildImageEditInputs(artifacts),
+      };
+    }
 
     if (groupId) {
       const groupInfo = await this.chatGroupService.getGroupInfoFromId(groupId);
@@ -425,6 +467,8 @@ export class ChatService {
         : modelType === 2
         ? useModel
         : null,
+      runTrace: JSON.stringify(gatewayDecision.trace),
+      responseItems: [],
     });
     const userLogId = userSaveLog.id;
     const assistantLogId = assistantSaveLog.id;
@@ -504,7 +548,7 @@ export class ChatService {
           /* 普通对话 */
           response = await this.openAIChatService.chat(messagesHistory, {
             chatId: assistantLogId,
-            extraParam,
+            extraParam: updatedExtraParam,
             deepThinkingType,
             max_tokens: max_tokens,
             apiKey: modelKey,
@@ -516,10 +560,14 @@ export class ChatService {
             imageUrl,
             isFileUpload,
             fileUrl,
+            userId: req.user.id,
+            sessionId: groupId ? String(groupId) : undefined,
             usingNetwork,
             timeout: modelTimeout,
             proxyUrl: proxyResUrl,
             modelAvatar: modelAvatar,
+            protocol: gatewayDecision.protocol,
+            gatewayTrace: gatewayDecision.trace,
             usingDeepThinking: usingDeepThinking,
             usingMcpTool: usingMcpTool,
             isMcpTool: isMcpTool,
@@ -530,6 +578,17 @@ export class ChatService {
               await this.chatLogService.updateChatLog(assistantLogId, {
                 content: data.errMsg,
                 status: 4,
+                responseItems: [
+                  {
+                    id: `error-${assistantLogId}`,
+                    type: 'error',
+                    title: '执行失败',
+                    summary: data.errMsg,
+                    status: 'failed',
+                    updatedAt: new Date().toISOString(),
+                    error: data.errMsg,
+                  },
+                ],
               });
             },
             onDatabase: async data => {
@@ -537,11 +596,33 @@ export class ChatService {
               if (data.networkSearchResult) {
                 await this.chatLogService.updateChatLog(assistantLogId, {
                   networkSearchResult: data.networkSearchResult,
+                  responseItems: [
+                    {
+                      id: `search-${assistantLogId}`,
+                      type: 'search',
+                      title: '联网搜索',
+                      summary: '已完成联网搜索',
+                      status: 'success',
+                      updatedAt: new Date().toISOString(),
+                      data: { raw: data.networkSearchResult },
+                    },
+                  ],
                 });
               }
               if (data.fileVectorResult) {
                 await this.chatLogService.updateChatLog(assistantLogId, {
                   fileVectorResult: data.fileVectorResult,
+                  responseItems: [
+                    {
+                      id: `file-read-${assistantLogId}`,
+                      type: 'file_read',
+                      title: '读取文件',
+                      summary: '已完成文件读取',
+                      status: 'success',
+                      updatedAt: new Date().toISOString(),
+                      data: { raw: data.fileVectorResult },
+                    },
+                  ],
                 });
               }
             },
@@ -592,16 +673,48 @@ export class ChatService {
             }
           }
 
+          const artifactResponseItems = await this.persistImageArtifactsFromResponse(response, {
+            prompt,
+            model: useModel,
+            sourceRunId: assistantLogId,
+            parentArtifactId: resolvedArtifactReferences[0]?.artifactId,
+            user: req.user,
+            groupId,
+          });
+
+          if (artifactResponseItems.length) {
+            response.response_items = [
+              ...(Array.isArray(response.response_items) ? response.response_items : []),
+              ...artifactResponseItems,
+            ];
+            response.imageUrl = artifactResponseItems.map(item => item.storageUrl).join(',');
+            response.full_content = this.stripInlineBase64Images(response.full_content);
+            sanitizedAnswer = this.stripInlineBase64Images(sanitizedAnswer);
+          }
+
           // 如果检测到敏感词，替换为 ***
           // gpt回答 - 使用替换后的内容存入数据库
+          const finalRunTrace = {
+            ...gatewayDecision.trace,
+            promptTokens,
+            completionTokens,
+            totalTokens: promptTokens + completionTokens,
+            estimatedCost: gatewayDecision.estimatedCost,
+          };
+
           await this.chatLogService.updateChatLog(assistantLogId, {
             // imageUrl: response?.imageUrl,
             content: sanitizedAnswer, // 使用替换后的内容
             reasoning_content: response.full_reasoning_content,
             tool_calls: response.tool_calls,
+            imageUrl: response.imageUrl || null,
+            responseItems: response.response_items?.length
+              ? JSON.stringify(response.response_items)
+              : null,
             promptTokens: promptTokens,
             completionTokens: completionTokens,
             totalTokens: promptTokens + completionTokens,
+            runTrace: JSON.stringify(finalRunTrace),
             status: 3,
           });
 
@@ -652,6 +765,17 @@ export class ChatService {
           // 根据你的应用需求，你可能想要在这里设置response为一个错误消息或执行其他错误处理逻辑
           await this.chatLogService.updateChatLog(assistantLogId, {
             status: 5,
+            responseItems: [
+              {
+                id: `error-${assistantLogId}`,
+                type: 'error',
+                title: '执行失败',
+                summary: '处理请求时发生错误',
+                status: 'failed',
+                updatedAt: new Date().toISOString(),
+                error: '处理请求时发生错误',
+              },
+            ],
           });
           response = { error: '处理请求时发生错误' };
         }
@@ -666,6 +790,73 @@ export class ChatService {
     } finally {
       res && res.end();
     }
+  }
+
+  private async persistImageArtifactsFromResponse(response: any, context: any) {
+    const images = this.extractBase64Images(response);
+    const artifactItems = [];
+
+    for (const image of images) {
+      try {
+        const artifact = await this.artifactService.createImageArtifact({
+          base64: image.base64,
+          mimeType: image.mimeType,
+          prompt: context.prompt,
+          model: context.model,
+          sourceRunId: context.sourceRunId,
+          parentArtifactId: context.parentArtifactId,
+          user: context.user,
+          groupId: context.groupId,
+          metadata: image.metadata,
+        });
+        artifactItems.push(artifact);
+      } catch (error) {
+        Logger.error(`保存图片artifact失败: ${error.message}`, 'ChatService');
+      }
+    }
+
+    return artifactItems;
+  }
+
+  private extractBase64Images(response: any) {
+    const images = [];
+    const pushImage = (base64?: string, mimeType = 'image/png', metadata = {}) => {
+      if (!base64 || typeof base64 !== 'string') return;
+      if (base64.startsWith('http://') || base64.startsWith('https://')) return;
+      const clean = base64.includes('base64,') ? base64 : base64.trim();
+      if (clean.length < 128) return;
+      images.push({ base64: clean, mimeType, metadata });
+    };
+
+    const scan = (value: any, path = '') => {
+      if (!value) return;
+      if (typeof value === 'string') {
+        const matches =
+          value.match(/data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\r\n]+)/g) || [];
+        matches.forEach(match => pushImage(match, undefined, { path }));
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => scan(item, `${path}[${index}]`));
+        return;
+      }
+      if (typeof value === 'object') {
+        const mimeType = value.mime_type || value.mimeType || value.media_type || 'image/png';
+        pushImage(value.b64_json, mimeType, { path, field: 'b64_json' });
+        pushImage(value.image_base64, mimeType, { path, field: 'image_base64' });
+        if (value.type === 'output_image' || value.type === 'image_generation_call') {
+          pushImage(value.data || value.result, mimeType, { path, type: value.type });
+        }
+        Object.keys(value).forEach(key => scan(value[key], path ? `${path}.${key}` : key));
+      }
+    };
+
+    scan(response?.response_items || response?.output || response?.data || response?.full_content);
+    return images;
+  }
+
+  private stripInlineBase64Images(content = '') {
+    return content.replace(/!\[[^\]]*\]\(data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+\)/g, '').trim();
   }
 
   async updateChatTitle(groupId, groupInfo, modelType, prompt, req) {

@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { fetchQueryOneCatAPI } from '@/api/appStore'
+import { fetchQueryOneAgentAPI } from '@/api/agent'
 import logo from '@/assets/logo.png'
 import { useAuthStore, useChatStore } from '@/store'
 import { computed, ref, watch } from 'vue'
@@ -61,7 +61,7 @@ const activeAppId = computed(() => activeGroupInfo?.value?.appId || 0)
 
 const queryAppInfo = async (appId: number) => {
   try {
-    const res: any = await fetchQueryOneCatAPI({ id: appId })
+    const res: any = await fetchQueryOneAgentAPI({ id: appId })
     if (res.data) {
       appDetail.value = res.data
     } else {

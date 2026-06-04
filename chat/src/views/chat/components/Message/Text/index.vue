@@ -3,6 +3,11 @@ import { fetchTtsAPIProcess } from '@/api'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
 import { useAuthStore, useGlobalStoreWithOut } from '@/store'
+import {
+  normalizeResponseItems,
+  responseItemsFromLegacy,
+  type ResponseItem,
+} from '@/utils/agentResponse'
 import { copyText } from '@/utils/format'
 import { message } from '@/utils/message'
 import {
@@ -30,6 +35,7 @@ import 'highlight.js/styles/atom-one-light.css' // 更现代的浅色主题
 import MarkdownIt from 'markdown-it'
 import mila from 'markdown-it-link-attributes'
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import AgentTraceTimeline from '../AgentTraceTimeline.vue'
 
 // 注册mermaid语言到highlight.js
 hljs.registerLanguage('mermaid', () => ({
@@ -92,13 +98,21 @@ interface Props {
   networkSearchResult?: string
   fileVectorResult?: string
   tool_calls?: string
+  responseItems?: ResponseItem[] | Chat.AgentTraceItem[] | string
+  artifacts?: any[] | string
+  attachments?: any[] | string
+  runId?: string
+  traceStatus?: string
+  toolSummary?: string
   isLast?: boolean
   usingNetwork?: boolean
   usingDeepThinking?: boolean
   usingMcpTool?: boolean
   reasoningText?: string
+  responseMeta?: string
   fileAnalysisProgress?: number
   useFileSearch?: boolean
+  response_items?: Chat.ArtifactResponseItem[]
 }
 
 interface Emit {
@@ -122,6 +136,7 @@ const emit = defineEmits<Emit>()
 
 const showThinking = ref(true)
 const showSearchResult = ref(false)
+const showFileReferences = ref(true)
 const textRef = ref<HTMLElement>()
 const localTtsUrl = ref(props.ttsUrl)
 const playbackState = ref('paused')
@@ -141,7 +156,21 @@ const onOpenImagePreviewer =
 const isHideTts = computed(() => Number(authStore.globalConfig?.isHideTts) === 1)
 const enableHtmlRender = computed(() => Number(authStore.globalConfig?.enableHtmlRender) !== 0)
 
+const normalizedResponseItems = computed(() => {
+  const direct = normalizeResponseItems(props.responseItems as any)
+  return direct.length ? direct : responseItemsFromLegacy(props as any)
+})
+
 const searchResult = computed(() => {
+  const toolResult = normalizedResponseItems.value.find(
+    item => item.type === 'tool_result' && (item as any).name === 'network_search'
+  ) as any
+  if (toolResult?.output) {
+    const parsedData = Array.isArray(toolResult.output)
+      ? toolResult.output
+      : toolResult.output?.searchResults
+    if (Array.isArray(parsedData)) return parsedData.slice(0, 50)
+  }
   if (props.networkSearchResult) {
     try {
       const parsedData = JSON.parse(props.networkSearchResult)
@@ -153,6 +182,33 @@ const searchResult = computed(() => {
   }
   return []
 })
+
+const fileReferences = computed(() => {
+  if (!props.fileVectorResult) return []
+  try {
+    const parsedData = JSON.parse(props.fileVectorResult)
+    return Array.isArray(parsedData) ? parsedData.slice(0, 20) : []
+  } catch (e) {
+    console.error('解析 fileVectorResult 时出错', e)
+    return []
+  }
+})
+
+const referenceLabel = (item: any) => {
+  const locator = item?.locator || {}
+  const parts = []
+  if (locator.pageNumber) parts.push(`第 ${locator.pageNumber} 页`)
+  if (locator.sheetName) parts.push(`Sheet: ${locator.sheetName}`)
+  if (locator.address) parts.push(`单元格 ${locator.address}`)
+  else if (locator.rowIndex && locator.columnIndex)
+    parts.push(`R${locator.rowIndex}C${locator.columnIndex}`)
+  if (locator.paragraphId) parts.push(`段落 ${locator.paragraphId}`)
+  return parts.join(' · ') || item.type || '引用位置'
+}
+
+const jumpToReference = (item: any) => {
+  if (item?.originalUrl) window.open(item.originalUrl, '_blank')
+}
 
 const buttonGroupClass = computed(() => {
   return playbackState.value !== 'paused' || isEditable.value
@@ -421,6 +477,18 @@ mdi.renderer.rules.image = function (tokens, idx, options, env, self) {
 }
 
 const imageUrlArray = computed(() => {
+  const attachmentUrls = normalizedResponseItems.value
+    .flatMap((item: any) => {
+      const attachments = item.type === 'artifact' ? item.artifact?.attachments : item.attachments
+      return Array.isArray(attachments)
+        ? attachments
+            .filter((attachment: any) => attachment.type === 'image')
+            .map((attachment: any) => attachment.url)
+        : []
+    })
+    .filter(Boolean)
+  if (attachmentUrls.length) return attachmentUrls
+
   const val = props.imageUrl
   if (!val) return []
   // 支持 JSON 字符串格式 {"imageUrls":[...]}
@@ -452,11 +520,22 @@ const imageUrlArray = computed(() => {
   return []
 })
 
+const imageArtifacts = computed(() =>
+  (props.response_items || []).filter(
+    item => item?.type === 'artifact' && item?.artifactType === 'image' && item?.storageUrl
+  )
+)
+
+const displayedImageUrls = computed(() => {
+  if (imageArtifacts.value.length) return imageArtifacts.value.map(item => item.storageUrl)
+  return imageUrlArray.value
+})
+
 const isImageUrl = computed(() => {
   if (!props.imageUrl) return false
 
   // 如果已经成功提取了URLs，则认为是图片
-  if (imageUrlArray.value.length > 0) {
+  if (displayedImageUrls.value.length > 0) {
     return true
   }
 
@@ -511,6 +590,101 @@ const reasoningText = computed<string>(() => {
   return modifiedValue
 })
 
+const responseMeta = computed(() => {
+  if (!props.responseMeta) return null
+  try {
+    return JSON.parse(props.responseMeta)
+  } catch {
+    return null
+  }
+})
+
+const responseItems = computed<any[]>(() => {
+  if (!props.responseItems) return []
+  try {
+    const parsed = JSON.parse(props.responseItems)
+    return Array.isArray(parsed) ? parsed.slice(-8) : []
+  } catch {
+    return []
+  }
+})
+
+const responseProcessItems = computed(() =>
+  responseItems.value.filter(item =>
+    ['run_status', 'tool_call', 'tool_result', 'artifact'].includes(item.type)
+  )
+)
+
+const responseItemLabel = (item: any) => {
+  const toolLabels: Record<string, string> = {
+    web_search: '搜索',
+    file_reader: '文件',
+    image_generation: '绘图',
+    image_edit: '修图',
+  }
+  if (item.toolName) return toolLabels[item.toolName] || item.toolName
+  if (item.type === 'artifact') return item.artifactType === 'image' ? '图片' : '产物'
+  return item.status === 'completed' ? '完成' : item.status === 'failed' ? '失败' : '运行'
+}
+
+const isResponsesMode = computed(() => responseMeta.value?.apiFormat === 'responses')
+
+const responseScenarioLabel = computed(() => {
+  const scenario = responseMeta.value?.scenario
+  const labels: Record<string, string> = {
+    chat: '普通对话',
+    realtime: '实时信息',
+    vision: '看图理解',
+    image_generation: '图片生成',
+    image_edit: '图片修改',
+    file_analysis: '文件处理',
+    multimodal: '多模态',
+  }
+  return labels[scenario] || ''
+})
+
+const responseStatusLabel = computed(() => {
+  const status = responseMeta.value?.status
+  const labels: Record<string, string> = {
+    created: '已创建',
+    in_progress: '生成中',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }
+  return labels[status] || ''
+})
+
+const attachmentSummaryText = computed(() => {
+  const summary = responseMeta.value?.attachmentSummary
+  if (!summary) return ''
+  const parts = []
+  if (summary.images) parts.push(`${summary.images} 张图片`)
+  if (summary.documents) parts.push(`${summary.documents} 个文件`)
+  if (summary.pdfs) parts.push(`${summary.pdfs} 个 PDF`)
+  return parts.join(' · ')
+})
+
+const reasoningElapsedText = computed(() => {
+  const elapsedMs = Number(responseMeta.value?.elapsedMs || 0)
+  if (!elapsedMs) return ''
+  const seconds = Math.max(1, Math.round(elapsedMs / 1000))
+  return ` ${seconds} 秒`
+})
+
+const thinkingTitle = computed(() => {
+  if (props.loading && !text.value) return isResponsesMode.value ? '正在思考' : '深度思考中'
+  if (reasoningText.value)
+    return isResponsesMode.value ? `已思考${reasoningElapsedText.value}` : '已深度思考'
+  return isResponsesMode.value ? '思考中' : '深度思考'
+})
+
+const reasoningStatusText = computed(() => {
+  if (props.loading && !text.value) return '生成答案前正在整理推理过程'
+  if (isResponsesMode.value) return '来自 Responses API 的推理摘要'
+  return '模型推理过程'
+})
+
 function highlightBlock(str: string, lang?: string) {
   const blockId = `code-block-${Date.now()}-${Math.floor(Math.random() * 1000)}`
 
@@ -557,6 +731,19 @@ async function handleEditMessage() {
 async function handleMessage(item: string) {
   await onConversation({
     msg: item,
+  })
+}
+
+function handleTraceRerun(payload: { runId: number; failedItemId: string }) {
+  if (props.chatId) {
+    handleRegenerate?.(props.index, props.chatId)
+  }
+}
+
+async function handleTraceContinueEdit(item: Chat.AgentTraceItem) {
+  const url = item.data?.url || item.summary || ''
+  await onConversation?.({
+    msg: `继续编辑这个 artifact：${item.title || item.id}${url ? `\n${url}` : ''}`,
   })
 }
 
@@ -941,10 +1128,51 @@ onMounted(() => {
 })
 
 function openImagePreview(index: number) {
-  // 通知父组件打开预览器
-  if (onOpenImagePreviewer && imageUrlArray.value.length > 0) {
-    onOpenImagePreviewer(imageUrlArray.value, index)
+  if (onOpenImagePreviewer && displayedImageUrls.value.length > 0) {
+    onOpenImagePreviewer(displayedImageUrls.value, index, { artifacts: imageArtifacts.value })
   }
+}
+
+function getArtifactForIndex(index: number) {
+  return imageArtifacts.value[index]
+}
+
+function handleSaveArtifact(artifact: Chat.ArtifactResponseItem) {
+  copyText({ text: artifact.storageUrl })
+  message()?.success('图片链接已复制，可用于保存')
+}
+
+function handleDownloadArtifact(artifact: Chat.ArtifactResponseItem) {
+  const link = document.createElement('a')
+  link.href = artifact.storageUrl
+  link.download = `${artifact.artifactId || 'artifact'}.png`
+  link.target = '_blank'
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function handleContinueArtifact(artifact: Chat.ArtifactResponseItem) {
+  onConversation?.({
+    msg: '继续修改这张图片',
+    artifactReferences: [{ artifactId: artifact.artifactId, role: 'edit' }],
+    extraParam: {
+      useResponsesApi: true,
+      artifactReferences: [{ artifactId: artifact.artifactId, role: 'edit' }],
+    },
+  })
+}
+
+function handleReferenceArtifact(artifact: Chat.ArtifactResponseItem) {
+  onConversation?.({
+    msg: '以上图作为参考继续创作',
+    artifactReferences: [{ artifactId: artifact.artifactId, role: 'reference' }],
+    extraParam: {
+      useResponsesApi: true,
+      artifactReferences: [{ artifactId: artifact.artifactId, role: 'reference' }],
+    },
+  })
 }
 
 // 打开单张图片预览
@@ -957,6 +1185,15 @@ function openSingleImagePreview(src: string) {
 
 <template>
   <div class="text-wrap flex w-full flex-col px-1 group">
+    <AgentTraceTimeline
+      v-if="!isUserMessage"
+      :run-id="chatId"
+      :items="responseItems"
+      :loading="loading"
+      @rerun="handleTraceRerun"
+      @continue-edit="handleTraceContinueEdit"
+    />
+
     <!-- 网页搜索结果 -->
     <div v-if="!isUserMessage && (searchResult.length || (loading && usingNetwork))" class="mb-2">
       <div
@@ -994,18 +1231,69 @@ function openSingleImagePreview(src: string) {
       </transition>
     </div>
 
+    <!-- Agent 运行过程 -->
+    <div
+      v-if="!isUserMessage && responseProcessItems.length"
+      class="mb-2 rounded-2xl border border-gray-200 bg-white/70 p-3 text-sm text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-300"
+    >
+      <div class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+        <span>执行过程</span>
+        <span>{{ responseProcessItems.length }} 步</span>
+      </div>
+      <div class="flex flex-col gap-2">
+        <div
+          v-for="item in responseProcessItems"
+          :key="item.id"
+          class="flex items-start gap-2 rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/40"
+        >
+          <span
+            class="mt-0.5 min-w-[2.5rem] rounded-full bg-gray-200 px-2 py-0.5 text-center text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+          >
+            {{ responseItemLabel(item) }}
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-gray-700 dark:text-gray-200">
+              {{ item.title || item.status || item.type }}
+            </div>
+            <div v-if="item.error" class="mt-1 text-xs text-red-500">
+              {{ item.error }}
+            </div>
+          </div>
+          <span class="text-xs text-gray-400">{{ item.status }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 深度思考内容 -->
-    <div v-if="!isUserMessage && (reasoningText || (loading && usingDeepThinking))" class="mb-2">
+    <div
+      v-if="
+        !isUserMessage && (reasoningText || (loading && (usingDeepThinking || isResponsesMode)))
+      "
+      class="mb-2"
+    >
       <div
         @click="showThinking = !showThinking"
         class="text-gray-600 mb-1 cursor-pointer items-center btn-pill glow-container"
+        :class="{ 'bg-gray-100 dark:bg-gray-800': isResponsesMode }"
       >
         <TwoEllipses theme="outline" size="18" class="mr-1 flex" />
-        <span v-if="reasoningText">{{ text || !loading ? '已深度思考' : '深度思考中' }}</span>
-        <span v-else-if="loading && usingDeepThinking">深度思考</span>
+        <span>{{ thinkingTitle }}</span>
+        <span
+          v-if="isResponsesMode"
+          class="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+        >
+          Responses
+        </span>
+        <span
+          v-if="responseScenarioLabel"
+          class="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+        >
+          {{ responseScenarioLabel }}
+        </span>
         <LoadingOne
           v-if="
-            (loading && usingDeepThinking && !reasoningText) || (!text && loading && reasoningText)
+            (loading && (usingDeepThinking || isResponsesMode) && !reasoningText) ||
+            (!text && loading && reasoningText)
           "
           class="rotate-icon flex mx-1"
         />
@@ -1013,7 +1301,8 @@ function openSingleImagePreview(src: string) {
         <Up v-else-if="reasoningText" size="18" class="ml-1 flex" />
         <div
           v-if="
-            (loading && usingDeepThinking && !reasoningText) || (!text && loading && reasoningText)
+            (loading && (usingDeepThinking || isResponsesMode) && !reasoningText) ||
+            (!text && loading && reasoningText)
           "
           class="glow-band"
         ></div>
@@ -1023,11 +1312,25 @@ function openSingleImagePreview(src: string) {
         <div
           v-if="showThinking && reasoningText"
           :class="[
-            'markdown-body text-gray-600 dark:text-gray-400 pl-5 mt-2 border-l-2 border-gray-300 dark:border-gray-600 overflow-hidden transition-opacity duration-500 ease-in-out',
+            'mt-2 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/80 p-3 text-gray-600 shadow-sm transition-opacity duration-500 ease-in-out dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400',
             { 'markdown-body-generate': loading && !text },
           ]"
-          v-html="reasoningText"
-        ></div>
+        >
+          <div
+            class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-500"
+          >
+            <span>{{ reasoningStatusText }}</span>
+            <span class="flex items-center gap-2">
+              <span v-if="attachmentSummaryText">{{ attachmentSummaryText }}</span>
+              <span v-if="responseStatusLabel">{{ responseStatusLabel }}</span>
+              <span v-if="reasoningElapsedText">{{ reasoningElapsedText.trim() }}</span>
+            </span>
+          </div>
+          <div
+            class="markdown-body border-l-2 border-gray-300 pl-4 dark:border-gray-600"
+            v-html="reasoningText"
+          ></div>
+        </div>
       </transition>
     </div>
 
@@ -1110,34 +1413,73 @@ function openSingleImagePreview(src: string) {
       </div>
     </div>
 
+    <!-- 文件引用卡片 -->
+    <div v-if="!isUserMessage && fileReferences.length" class="mt-3 w-full">
+      <div
+        class="text-gray-600 mb-2 cursor-pointer items-center btn-pill"
+        @click="showFileReferences = !showFileReferences"
+      >
+        <span>文件引用 {{ fileReferences.length }} 条</span>
+        <Down v-if="!showFileReferences" size="18" class="ml-1 flex" />
+        <Up v-else size="18" class="ml-1 flex" />
+      </div>
+      <transition name="fold">
+        <div v-if="showFileReferences" class="grid gap-2 sm:grid-cols-2">
+          <button
+            v-for="(item, index) in fileReferences"
+            :key="`${item.fileId}-${index}`"
+            type="button"
+            class="text-left rounded-xl border border-gray-200 dark:border-gray-700 p-3 bg-white/70 dark:bg-gray-800/70 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+            @click="jumpToReference(item)"
+          >
+            <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+              {{ item.fileName || item.fileId }}
+            </div>
+            <div class="text-xs text-blue-600 dark:text-blue-300 mt-1">
+              {{ referenceLabel(item) }}
+            </div>
+            <div class="text-sm text-gray-700 dark:text-gray-300 mt-2 line-clamp-2">
+              {{ item.content }}
+            </div>
+          </button>
+        </div>
+      </transition>
+    </div>
+
     <!-- 图片显示部分 -->
     <div
-      v-if="imageUrlArray && imageUrlArray.length > 0 && isImageUrl"
+      v-if="displayedImageUrls && displayedImageUrls.length > 0 && isImageUrl"
       :class="['my-2 w-full flex', isUserMessage ? 'justify-end' : 'justify-start']"
     >
       <div
         class="gap-2"
         :style="{
           display: 'grid',
-          gridTemplateColumns: `repeat(${Math.min(imageUrlArray.length, 4)}, 1fr)`,
+          gridTemplateColumns: `repeat(${Math.min(displayedImageUrls.length, 4)}, 1fr)`,
           gridAutoRows: '1fr',
           maxWidth: isUserMessage ? (isMobile ? '60vw' : '40vw') : '80vw',
           width: 'auto',
         }"
       >
-        <img
-          v-for="(file, index) in imageUrlArray"
-          :key="index"
-          :src="file"
-          alt="图片"
-          @click="openImagePreview(index)"
-          class="rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-90 transition-opacity w-auto h-auto max-h-[30vh] object-cover"
-          :style="{
-            aspectRatio: '1/1',
-            width: '160px',
-            height: '160px',
-          }"
-        />
+        <div v-for="(file, index) in displayedImageUrls" :key="index" class="artifact-image-card">
+          <img
+            :src="file"
+            alt="图片"
+            @click="openImagePreview(index)"
+            class="rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-90 transition-opacity w-auto h-auto max-h-[30vh] object-cover"
+            :style="{
+              aspectRatio: '1/1',
+              width: '160px',
+              height: '160px',
+            }"
+          />
+          <div v-if="getArtifactForIndex(index)" class="artifact-actions">
+            <button @click="handleSaveArtifact(getArtifactForIndex(index))">保存</button>
+            <button @click="handleDownloadArtifact(getArtifactForIndex(index))">下载</button>
+            <button @click="handleContinueArtifact(getArtifactForIndex(index))">继续修改</button>
+            <button @click="handleReferenceArtifact(getArtifactForIndex(index))">设为参考图</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1408,4 +1750,30 @@ pre.fold-leave-to {
 }
 
 /* 加载动画样式 */
+</style>
+
+<style scoped>
+.artifact-image-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: 160px;
+}
+.artifact-actions button {
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  color: rgb(75, 85, 99);
+  background: rgba(255, 255, 255, 0.75);
+}
+:global(.dark) .artifact-actions button {
+  color: rgb(209, 213, 219);
+  background: rgba(31, 41, 55, 0.75);
+}
 </style>

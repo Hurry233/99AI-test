@@ -1,16 +1,20 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+
 import { AgentRunService } from '../aiTool/agent/agent-run.service';
 import { AgentTraceService } from '../aiTool/agent/agent-trace.service';
-import { ModelGatewayService } from '../aiTool/agent/model-gateway.service';
+import { ModelGatewayService as AgentModelGatewayService } from '../aiTool/agent/model-gateway.service';
 import { ToolExecutorService } from '../aiTool/agent/tool-executor.service';
 import { ToolRegistryService } from '../aiTool/agent/tool-registry.service';
+
 import { OpenAIChatService } from '../aiTool/chat/chat.service';
 import { NetSearchService } from '../aiTool/search/netSearch.service';
 import { AppEntity } from '../app/app.entity';
 import { AppService } from '../app/app.service';
 import { AppCatsEntity } from '../app/appCats.entity';
 import { UserAppsEntity } from '../app/userApps.entity';
+import { ArtifactEntity } from '../artifact/artifact.entity';
+import { ArtifactService } from '../artifact/artifact.service';
 import { AutoReplyEntity } from '../autoReply/autoReply.entity';
 import { AutoReplyService } from '../autoReply/autoReply.service';
 import { BadWordsEntity } from '../badWords/badWords.entity';
@@ -21,9 +25,11 @@ import { ChatGroupService } from '../chatGroup/chatGroup.service';
 import { ChatLogEntity } from '../chatLog/chatLog.entity';
 import { ChatLogService } from '../chatLog/chatLog.service';
 import { CramiPackageEntity } from '../crami/cramiPackage.entity';
+import { FileWorkspaceModule } from '../fileWorkspace/fileWorkspace.module';
 import { ConfigEntity } from '../globalConfig/config.entity';
 import { GlobalConfigService } from '../globalConfig/globalConfig.service';
 import { MailerService } from '../mailer/mailer.service';
+import { ModelGatewayService } from '../models/model-gateway.service';
 import { ModelsEntity } from '../models/models.entity';
 import { ModelsService } from '../models/models.service';
 import { PluginEntity } from '../plugin/plugin.entity';
@@ -44,7 +50,9 @@ import { ChatService } from './chat.service';
 @Global()
 @Module({
   imports: [
+    FileWorkspaceModule,
     TypeOrmModule.forFeature([
+      ArtifactEntity,
       BalanceEntity,
       UserEntity,
       PluginEntity,
@@ -68,6 +76,7 @@ import { ChatService } from './chat.service';
   ],
   controllers: [ChatController],
   providers: [
+    ArtifactService,
     ChatService,
     UserBalanceService,
     UserService,
@@ -81,12 +90,15 @@ import { ChatService } from './chat.service';
     BadWordsService,
     ChatGroupService,
     ModelsService,
+    ModelGatewayService,
     OpenAIChatService,
     AgentRunService,
-    ModelGatewayService,
+
+    AgentModelGatewayService,
     ToolRegistryService,
     ToolExecutorService,
     AgentTraceService,
+
     NetSearchService,
     AppService,
   ],

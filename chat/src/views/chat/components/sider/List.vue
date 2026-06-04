@@ -85,48 +85,26 @@ async function handleSelect(group: Chat.History) {
 }
 
 async function addNewChatGroupFromApp(appId: number) {
-  console.log('=== 侧边栏应用启动调试 ===')
-  console.log('点击的应用ID:', appId)
-  console.log('所有mineApps数据:', mineApps.value)
+  // 首先从 mineApps 中查找当前 Agent 的信息
+  const currentAgent = mineApps.value.find(app => app.appId === appId)
 
-  // 首先从mineApps中查找当前应用的信息
-  const currentApp = mineApps.value.find(app => app.appId === appId)
-  console.log('找到的当前应用数据:', currentApp)
-
-  if (currentApp?.prompt) {
-    console.log('应用包含prompt配置:', currentApp.prompt)
-  } else {
-    console.log('应用没有prompt配置，prompt值为:', currentApp?.prompt)
-  }
-
-  // 检查是否有配置弹窗功能
-  console.log(
-    '弹窗方法可用性 - tryParseJson:',
-    !!tryParseJson,
-    'showAppConfigModal:',
-    !!showAppConfigModal
-  )
-
-  if (tryParseJson && showAppConfigModal && currentApp?.prompt) {
-    const formSchema = tryParseJson(currentApp.prompt)
-    console.log('解析的表单结构:', formSchema)
+  if (tryParseJson && showAppConfigModal && currentAgent?.prompt) {
+    const formSchema = tryParseJson(currentAgent.prompt)
 
     if (formSchema) {
-      // 将MineApp格式转换为弹窗期望的App格式
-      const appForModal = {
-        ...currentApp, // 先展开所有字段
-        id: currentApp.appId, // MineApp中使用appId，弹窗期望id
-        name: currentApp.appName, // MineApp中使用appName，弹窗期望name
-        des: currentApp.appDes, // MineApp中使用appDes，弹窗期望des
+      // 将 MineApp 格式转换为弹窗期望的 Agent 格式
+      const agentForModal = {
+        ...currentAgent,
+        id: currentAgent.appId,
+        name: currentAgent.appName,
+        des: currentAgent.appDes,
       }
-      console.log('转换后的应用信息显示配置弹窗:', appForModal)
-      showAppConfigModal(appForModal, formSchema)
+      showAppConfigModal(agentForModal, formSchema)
       return
     }
   }
 
   // 如果没有配置或获取失败，直接创建新的聊天组
-  console.log('直接创建新聊天组，没有配置弹窗')
   await chatStore.addNewChatGroup(appId)
 }
 
@@ -178,7 +156,7 @@ watch(
   () => authStore.isLogin,
   (newValue, oldValue) => {
     if (newValue === true) {
-      // 如果登录了，则查询我的应用
+      // 如果登录了，则查询我的 Agent
       appCatStore.queryMineApps()
       chatStore.queryMyGroup()
     }
@@ -217,7 +195,7 @@ const isAppsHovered = ref(false)
               <Down v-if="!showAllApps" theme="outline" size="16" />
               <Up v-else theme="outline" size="16" />
             </button>
-            <div class="tooltip tooltip-left">{{ showAllApps ? '折叠应用' : '展开应用' }}</div>
+            <div class="tooltip tooltip-left">{{ showAllApps ? '折叠 Agent' : '展开 Agent' }}</div>
           </div>
         </div>
 

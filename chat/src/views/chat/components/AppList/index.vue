@@ -1,47 +1,28 @@
 <script setup lang="ts">
-import { fetchCollectAppAPI, fetchQueryAppCatsAPI, fetchQueryAppsAPI } from '@/api/appStore'
+import {
+  fetchCollectAgentAPI,
+  fetchQueryAgentCategoriesAPI,
+  fetchQueryAgentsAPI,
+  type AgentCategory,
+  type AgentItem,
+} from '@/api/agent'
 // import { fetchQueryMenuAPI } from '@/api/config';
 import type { ResData } from '@/api/types'
 // 移除DynamicFormModal组件的导入
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
-import { useAppCatStore, useAuthStoreWithout, useChatStore, useGlobalStoreWithOut } from '@/store'
+import { useAppCatStore, useAuthStoreWithout, useGlobalStoreWithOut } from '@/store'
 import { DIALOG_TABS } from '@/store/modules/global'
 import { message } from '@/utils/message'
 import { Left, Right, Search, Star, VipOne } from '@icon-park/vue-next'
 import PinyinMatch from 'pinyin-match'
 import { computed, inject, onMounted, ref, watch } from 'vue'
 
-// 接口定义
 interface FormField {
   type: 'input' | 'select'
   title: string
   placeholder: string
   options?: string[]
-}
-
-interface App {
-  id: number
-  name: string
-  des: string
-  coverImg: string
-  catId: string
-  appCount: number
-  demoData: string
-  loading?: boolean
-  createdAt: string
-  updatedAt: string
-  catName?: string
-  backgroundImg?: string
-  prompt?: string
-}
-
-interface AppCat {
-  id: number
-  name: string
-  coverImg: string
-  des: string
-  isMember?: number
 }
 
 const authStore = useAuthStoreWithout()
@@ -53,13 +34,11 @@ const useGlobalStore = useGlobalStoreWithOut()
 const ms = message()
 const appCatStore = useAppCatStore()
 const keyword = ref('')
-const chatStore = useChatStore()
-
 const catId = computed(() => appCatStore.catId)
-const appList = ref<App[]>([])
-const activeList = ref<App[]>([])
+const agentList = ref<AgentItem[]>([])
+const activeList = ref<AgentItem[]>([])
 const mineApps = computed(() => appCatStore.mineApps)
-const catList = ref<AppCat[]>([])
+const catList = ref<AgentCategory[]>([])
 const activeCatId = ref(0)
 
 // 从chatBase inject弹窗相关方法
@@ -73,49 +52,49 @@ const tryParseJson = inject('tryParseJson') as
 // Define emits
 const emit = defineEmits(['run-app', 'show-member-dialog', 'run-app-with-data'])
 
-function isMineApp(app: App): boolean {
-  return mineApps.value.some((item: any) => item.appId === app.id)
+function isMineAgent(agent: AgentItem): boolean {
+  return mineApps.value.some((item: any) => item.appId === agent.id)
 }
 
-async function queryApps() {
-  const res: ResData = await fetchQueryAppsAPI()
-  appList.value = res?.data?.rows.map((item: App) => {
+async function queryAgents() {
+  const res: ResData = await fetchQueryAgentsAPI()
+  agentList.value = res?.data?.rows.map((item: AgentItem) => {
     item.loading = false
     return item
   })
-  activeList.value = appList.value
+  activeList.value = agentList.value
 }
 
 const list = computed(() => {
   if (keyword.value) {
     const keywordLower = keyword.value.toLowerCase()
-    return appList.value.filter(item => PinyinMatch.match(item.name, keywordLower))
+    return agentList.value.filter(item => PinyinMatch.match(item.name, keywordLower))
   }
-  if (activeCatId.value === 0) return appList.value
+  if (activeCatId.value === 0) return agentList.value
 
-  return appList.value.filter(item => {
+  return agentList.value.filter(item => {
     if (!item.catId) return false
-    const catIds = item.catId.split(',').map(id => Number(id.trim()))
+    const catIds = String(item.catId)
+      .split(',')
+      .map(id => Number(id.trim()))
     return catIds.includes(activeCatId.value)
   })
 })
 
-async function handleCollect(app: App) {
-  app.loading = true
+async function handleCollect(agent: AgentItem) {
+  agent.loading = true
   try {
-    const res: ResData = await fetchCollectAppAPI({ appId: app.id })
+    const res: ResData = await fetchCollectAgentAPI({ appId: agent.id })
     ms.success(res.data)
     await appCatStore.queryMineApps()
-    app.loading = false
+    agent.loading = false
   } catch (error) {
-    app.loading = false
+    agent.loading = false
   }
 }
 
-async function handleRunApp(app: App) {
-  const appIdAsNumber = Number(app.id)
-
-  const appCats = app.catName?.split(',').map(cat => cat.trim()) || []
+async function handleRunAgent(agent: AgentItem) {
+  const appCats = agent.catName?.split(',').map(cat => cat.trim()) || []
   const isMemberApp = appCats.some(catName => isMemberCategory(catName))
 
   if (isMemberApp) {
@@ -135,36 +114,25 @@ async function handleRunApp(app: App) {
     }
   }
 
-  // 检查是否有配置弹窗功能
-  console.log('=== Agent启动调试 ===')
-  console.log('点击的Agent数据:', app)
-  console.log('Agent prompt字段:', app.prompt)
-  console.log(
-    '弹窗方法可用性 - tryParseJson:',
-    !!tryParseJson,
-    'showAppConfigModal:',
-    !!showAppConfigModal
-  )
 
   if (tryParseJson && showAppConfigModal) {
-    const formSchema = tryParseJson(app.prompt)
-    console.log('Agent解析的表单结构:', formSchema)
+    const formSchema = tryParseJson(agent.prompt)
 
     if (formSchema) {
-      // 显示配置弹窗
-      console.log('Agent即将显示配置弹窗')
-      showAppConfigModal(app, formSchema)
+      showAppConfigModal(agent, formSchema)
+
       return
     }
   }
 
-  // 如果没有配置或没有inject到方法，直接运行应用
-  console.log('Agent直接运行，没有配置弹窗')
-  emit('run-app', app)
+
+  // 如果没有配置或没有 inject 到方法，直接运行 Agent
+  emit('run-app', agent)
+
 }
 
 async function queryCats() {
-  const res: ResData = await fetchQueryAppCatsAPI()
+  const res: ResData = await fetchQueryAgentCategoriesAPI()
   const defaultCat = {
     id: 0,
     name: t('app.allCategories'),
@@ -179,11 +147,13 @@ function handleChangeCatId(id: number) {
 }
 
 watch(catId, val => {
-  if (!val) activeList.value = appList.value
+  if (!val) activeList.value = agentList.value
   else {
-    activeList.value = appList.value.filter(item => {
+    activeList.value = agentList.value.filter(item => {
       if (!item.catId) return false
-      const catIds = item.catId.split(',').map(id => Number(id.trim()))
+      const catIds = String(item.catId)
+        .split(',')
+        .map(id => Number(id.trim()))
       return catIds.includes(Number(val))
     })
   }
@@ -232,7 +202,7 @@ function isMemberCategory(catName: string): boolean {
 
 onMounted(() => {
   queryCats()
-  queryApps()
+  queryAgents()
 })
 </script>
 
@@ -374,7 +344,7 @@ onMounted(() => {
         <div
           v-for="item in list"
           :key="item.id"
-          @click="handleRunApp(item)"
+          @click="handleRunAgent(item)"
           class="group cursor-pointer flex items-center gap-3 rounded-xl px-3 py-3 transition-colors duration-200 bg-gray-50 dark:bg-gray-750 ring-1 ring-gray-100 dark:ring-gray-750 hover:shadow-md"
           style="min-height: 7rem"
         >
@@ -402,9 +372,9 @@ onMounted(() => {
                 {{ item.name }}
               </span>
               <Star
-                :theme="isMineApp(item) ? 'filled' : 'outline'"
+                :theme="isMineAgent(item) ? 'filled' : 'outline'"
                 size="16"
-                :fill="isMineApp(item) ? '#facc15' : 'currentColor'"
+                :fill="isMineAgent(item) ? '#facc15' : 'currentColor'"
                 class="btn-icon-action cursor-pointer flex-shrink-0 group-hover:text-yellow-400 dark:group-hover:text-yellow-500"
                 @click.stop="handleCollect(item)"
               />

@@ -13,6 +13,7 @@ import { QuerAllChatLogDto } from './dto/queryAllChatLog.dto';
 import { QueryByAppIdDto } from './dto/queryByAppId.dto';
 import { QuerMyChatLogDto } from './dto/queryMyChatLog.dto';
 import { QuerySingleChatDto } from './dto/querySingleChat.dto';
+import { RetryTraceItemDto } from './dto/retryTraceItem.dto';
 import { recDrawImgDto } from './dto/recDrawImg.dto';
 
 @Controller('chatLog')
@@ -89,6 +90,14 @@ export class ChatLogController {
   @UseGuards(JwtAuthGuard)
   byAppId(@Req() req: Request, @Query() params: QueryByAppIdDto) {
     return this.chatLogService.byAppId(req, params);
+  }
+
+  @Post('retryTraceItem')
+  @ApiOperation({ summary: '重试失败的执行步骤' })
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  retryTraceItem(@Req() req: Request, @Body() body: RetryTraceItemDto) {
+    return this.chatLogService.retryTraceItem(req, body);
   }
 
   @Get('querySingleChat')

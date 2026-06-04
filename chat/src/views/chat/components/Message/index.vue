@@ -38,16 +38,24 @@ interface Props {
   networkSearchResult?: string
   fileVectorResult?: string
   tool_calls?: string
+  responseItems?: any[] | Chat.AgentTraceItem[] | string
+  artifacts?: any[] | string
+  attachments?: any[] | string
+  runId?: string
+  traceStatus?: string
+  toolSummary?: string
   isLast?: boolean
   usingNetwork?: boolean
   usingDeepThinking?: boolean
   usingMcpTool?: boolean
   reasoningText?: string
+  responseMeta?: string
   taskId?: string
   isWorkflowMessage?: boolean
   nodeType?: string
   stepName?: string
   workflowProgress?: number
+  response_items?: Chat.ArtifactResponseItem[]
 }
 
 // 添加计算属性判断是否是用户消息
@@ -151,6 +159,7 @@ function handleRegenerate() {
           :content="content"
           :modelType="modelType"
           :imageUrl="imageUrl"
+          :response_items="response_items"
           :ttsUrl="ttsUrl"
           :fileUrl="fileUrl"
           :useFileSearch="useFileSearch"
@@ -160,11 +169,18 @@ function handleRegenerate() {
           :networkSearchResult="networkSearchResult"
           :fileVectorResult="fileVectorResult"
           :tool_calls="tool_calls"
+          :responseItems="responseItems"
+          :artifacts="artifacts"
+          :attachments="attachments"
+          :runId="runId"
+          :traceStatus="traceStatus"
+          :toolSummary="toolSummary"
           :isLast="isLast"
           :usingNetwork="usingNetwork"
           :usingDeepThinking="usingDeepThinking"
           :usingMcpTool="usingMcpTool"
           :reasoningText="reasoningText"
+          :responseMeta="responseMeta"
           :isWorkflowMessage="isWorkflowMessage"
           @regenerate="handleRegenerate"
           @copy="handleCopy"

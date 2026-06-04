@@ -1,0 +1,138 @@
+{
+  "normal": {
+    "chatId": 1001,
+    "runId": "run-fixture-normal",
+    "role": "assistant",
+    "content": "普通对话恢复成功。",
+    "traceStatus": "completed",
+    "toolSummary": "",
+    "responseItems": [
+      {
+        "id": "normal-message",
+        "type": "message",
+        "role": "assistant",
+        "text": "普通对话恢复成功。"
+      }
+    ],
+    "artifacts": []
+  },
+  "network": {
+    "chatId": 1002,
+    "runId": "run-fixture-network",
+    "role": "assistant",
+    "content": "已结合联网搜索结果回答。",
+    "networkSearchResult": "[{\"resultIndex\":1,\"title\":\"示例网页\",\"link\":\"https://example.com/news\",\"media\":\"Example\"}]",
+    "traceStatus": "completed",
+    "toolSummary": "network_search",
+    "responseItems": [
+      {
+        "id": "network-tool",
+        "type": "tool_result",
+        "name": "network_search",
+        "status": "completed",
+        "output": [
+          {
+            "resultIndex": 1,
+            "title": "示例网页",
+            "link": "https://example.com/news",
+            "media": "Example"
+          }
+        ]
+      },
+      {
+        "id": "network-message",
+        "type": "message",
+        "role": "assistant",
+        "text": "已结合联网搜索结果回答。"
+      }
+    ],
+    "artifacts": []
+  },
+  "image": {
+    "chatId": 1003,
+    "runId": "run-fixture-image",
+    "role": "assistant",
+    "content": "图片产物已生成。",
+    "imageUrl": "https://example.com/artifact.png",
+    "traceStatus": "completed",
+    "toolSummary": "image_generation",
+    "responseItems": [
+      {
+        "id": "image-call",
+        "type": "tool_call",
+        "name": "image_generation",
+        "status": "completed",
+        "arguments": { "prompt": "fixture image" }
+      },
+      {
+        "id": "image-artifact",
+        "type": "artifact",
+        "artifact": {
+          "id": "image-attachment",
+          "type": "image",
+          "title": "artifact.png",
+          "url": "https://example.com/artifact.png",
+          "attachments": [
+            {
+              "id": "image-attachment",
+              "type": "image",
+              "url": "https://example.com/artifact.png",
+              "source": "generated"
+            }
+          ]
+        }
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "image-attachment",
+        "type": "image",
+        "title": "artifact.png",
+        "url": "https://example.com/artifact.png"
+      }
+    ]
+  },
+  "file": {
+    "chatId": 1004,
+    "runId": "run-fixture-file",
+    "role": "assistant",
+    "content": "已根据文件检索结果回答。",
+    "fileUrl": "[{\"name\":\"report.pdf\",\"url\":\"https://example.com/report.pdf\",\"type\":\"application/pdf\"}]",
+    "fileVectorResult": "[{\"fileName\":\"report.pdf\",\"content\":\"fixture chunk\"}]",
+    "traceStatus": "completed",
+    "toolSummary": "file_vector_search",
+    "responseItems": [
+      {
+        "id": "file-tool",
+        "type": "tool_result",
+        "name": "file_vector_search",
+        "status": "completed",
+        "output": [{ "fileName": "report.pdf", "content": "fixture chunk" }]
+      },
+      {
+        "id": "file-message",
+        "type": "message",
+        "role": "assistant",
+        "text": "已根据文件检索结果回答。",
+        "attachments": [
+          {
+            "id": "file-attachment",
+            "type": "file",
+            "name": "report.pdf",
+            "url": "https://example.com/report.pdf",
+            "mimeType": "application/pdf",
+            "source": "upload"
+          }
+        ]
+      }
+    ],
+    "artifacts": [
+      {
+        "id": "file-attachment",
+        "type": "file",
+        "title": "report.pdf",
+        "url": "https://example.com/report.pdf"
+      }
+    ]
+  }
+}

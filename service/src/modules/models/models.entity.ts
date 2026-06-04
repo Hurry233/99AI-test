@@ -113,4 +113,43 @@ export class ModelsEntity extends BaseEntity {
     default: 0,
   })
   drawingType: number;
+
+  @Column({ comment: '是否支持 Responses 协议', nullable: true, default: false })
+  supportsResponses: boolean;
+
+  @Column({ comment: '是否支持视觉输入', nullable: true, default: false })
+  supportsVision: boolean;
+
+  @Column({ comment: '是否支持图片生成', nullable: true, default: false })
+  supportsImageGeneration: boolean;
+
+  @Column({ comment: '是否支持工具调用', nullable: true, default: false })
+  supportsTools: boolean;
+
+  @Column({ comment: '是否支持 JSON Schema 输出', nullable: true, default: false })
+  supportsJsonSchema: boolean;
+
+  @Column({ comment: '是否支持推理能力', nullable: true, default: false })
+  supportsReasoning: boolean;
+
+  @Column({ comment: '是否支持文件输入', nullable: true, default: false })
+  supportsFiles: boolean;
+
+  @Column({ comment: '能力配置中的上下文窗口 tokens', nullable: true, default: 64000 })
+  contextWindow: number;
+
+  @Column({ comment: '能力配置中的最大输出 tokens', nullable: true, default: 4096 })
+  maxOutputTokens: number;
+
+  @Column({ comment: '模型价格配置 JSON', nullable: true, type: 'text' })
+  pricing: string;
+
+  @Column({ comment: '模型限流配置 JSON', nullable: true, type: 'text' })
+  rateLimit: string;
+
+  @Column({ comment: '默认 fallback 模型', nullable: true })
+  defaultFallbackModel: string;
+
+  @Column({ comment: '工具允许列表 JSON', nullable: true, type: 'text' })
+  allowedTools: string;
 }

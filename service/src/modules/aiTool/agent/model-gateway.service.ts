@@ -5,8 +5,18 @@ import OpenAI from 'openai';
 
 @Injectable()
 export class ModelGatewayService {
-  shouldUseResponsesApi(inputs: { extraParam?: any; modelType?: any; model?: string }): boolean {
-    return Boolean(inputs?.extraParam?.useResponsesApi || inputs?.extraParam?.tools?.length);
+  shouldUseResponsesApi(inputs: {
+    protocol?: 'responses' | 'chat_completions';
+    extraParam?: any;
+    modelType?: any;
+    model?: string;
+  }): boolean {
+    return Boolean(
+      inputs?.protocol === 'responses' ||
+        inputs?.extraParam?.useResponsesApi ||
+        inputs?.extraParam?.tools?.length ||
+        inputs?.extraParam?.imageEditInputs?.length,
+    );
   }
 
   buildResponsesRequest(messagesHistory: any[], inputs: any): Record<string, any> {
@@ -27,13 +37,22 @@ export class ModelGatewayService {
           ],
     }));
 
+    const imageEditInputs = inputs.extraParam?.imageEditInputs || [];
+    if (imageEditInputs.length && input.length) {
+      const lastUserMessage = [...input].reverse().find((message: any) => message.role === 'user');
+      if (lastUserMessage) {
+        lastUserMessage.content = [...imageEditInputs, ...lastUserMessage.content];
+      }
+    }
+
     return {
       model: inputs.model,
       input,
       stream: true,
       temperature: inputs.temperature,
       max_output_tokens: inputs.max_tokens,
-      tools: inputs.extraParam?.tools,
+      tools:
+        inputs.extraParam?.tools || (imageEditInputs.length ? [{ type: 'image_generation' }] : undefined),
       tool_choice: inputs.extraParam?.tool_choice,
     };
   }
@@ -47,6 +66,25 @@ export class ModelGatewayService {
     const request = this.buildResponsesRequest(messagesHistory, inputs);
 
     Logger.debug(`Responses请求 - Input: ${JSON.stringify(request.input)}`, 'ModelGatewayService');
+    if (inputs.extraParam?.responseFormat) request.response_format = inputs.extraParam.responseFormat;
+    if (inputs.extraParam?.size) request.size = inputs.extraParam.size;
+    if (inputs.extraParam?.quality) request.quality = inputs.extraParam.quality;
+
+    if (inputs.extraParam?.imageEditInputs?.length) {
+      request.stream = false;
+      const response = await openai.responses.create(request, {
+        signal: inputs.abortController.signal,
+      });
+      result.raw_response = response;
+      result.response_items = response.output || [];
+      result.full_content = response.output_text || '';
+      inputs.onProgress?.({
+        response_items: result.response_items,
+        content: result.full_content ? [{ type: 'text', text: result.full_content }] : undefined,
+      });
+      return;
+    }
+
     const stream = await openai.responses.create(request, {
       signal: inputs.abortController.signal,
     });

@@ -29,11 +29,18 @@ declare namespace Chat {
     promptReference?: string
     networkSearchResult?: string
     fileVectorResult?: string
+    runId?: string
+    responseItems?: any[] | AgentTraceItem[] | ArtifactResponseItem[] | string
+    artifacts?: any[] | string
+    attachments?: any[] | string
+    traceStatus?: string
+    toolSummary?: string
     usingNetwork?: boolean
     usingDeepThinking?: boolean
     usingMcpTool?: boolean
     mcpToolUse?: string
     reasoningText?: string
+    responseMeta?: string
     reasoning_content?: string
     tool_calls?: string
     progress?: string
@@ -42,6 +49,47 @@ declare namespace Chat {
     nodeType?: string
     stepName?: string
     workflowProgress?: number
+    response_items?: ArtifactResponseItem[]
+    trace?: {
+      mode: 'full' | 'page' | 'none'
+      page?: number
+      size?: number
+      total: number
+      hasMore?: boolean
+    }
+  }
+
+  interface ArtifactResponseItem {
+    type: 'artifact'
+    artifactType: string
+    artifactId: string
+    parentArtifactId?: string
+    version?: number
+    sourceRunId?: string
+    storageUrl: string
+    prompt?: string
+    model?: string
+    metadata?: Record<string, any>
+  }
+
+  interface AgentTraceItem {
+    id: string
+    type:
+      | 'search'
+      | 'file_read'
+      | 'image_generation'
+      | 'error'
+      | 'artifact'
+      | 'citation'
+      | 'tool'
+      | 'text'
+    title?: string
+    summary?: string
+    status?: 'pending' | 'running' | 'success' | 'failed'
+    createdAt?: string
+    updatedAt?: string
+    data?: Record<string, any>
+    error?: string
   }
 
   interface History {
@@ -127,6 +175,7 @@ declare namespace Chat {
     chatId?: number
     taskId?: string
     imageUrl?: string
+    artifactReferences?: { artifactId: string; role?: string }[]
   }
 
   interface SearchAppsResponse {}

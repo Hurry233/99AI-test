@@ -1,12 +1,20 @@
 <script setup lang="ts">
 // ============== 组件导入 ==============
 import { fetchChatAPIProcess } from '@/api'
-import { fetchQueryOneCatAPI } from '@/api/appStore'
+import { fetchQueryOneAgentAPI } from '@/api/agent'
 import { openImageViewer } from '@/components/common/ImageViewer/useImageViewer'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
 import { useAuthStore, useChatStore, useGlobalStoreWithOut } from '@/store'
 import { dialog } from '@/utils/dialog'
+import {
+  artifactsFromResponseItems,
+  normalizeResponseItems,
+  responseItemsFromLegacy,
+  serializeResponseItems,
+  summarizeTools,
+  type ResponseItem,
+} from '@/utils/agentResponse'
 import { message } from '@/utils/message'
 import { Close, DropDownList } from '@icon-park/vue-next'
 import DownSmall from '@icon-park/vue-next/es/icons/DownSmall'
@@ -161,7 +169,7 @@ const activeModelAvatar = computed(() => {
   return String(usingPlugin?.value?.pluginImg || configObj?.value.modelInfo?.modelAvatar || '')
 })
 
-/* 当前对话组是否是应用 */
+/* 当前对话组是否是 Agent */
 const activeAppId = computed(() => activeGroupInfo?.value?.appId || 0)
 
 // ============== 弹窗相关计算属性 ==============
@@ -305,7 +313,7 @@ function handleModalClose() {
 
 async function handleModalSkip(app: any) {
   showFormModal.value = false
-  // 直接执行应用，不带数据
+  // 直接执行 Agent，不带数据
   await handleAppExecution(app)
 }
 
@@ -434,6 +442,7 @@ const onConversation = async ({
   chatId,
   taskId,
   imageUrl,
+  artifactReferences,
 }: Chat.ConversationParams) => {
   if (groupSources.value.length === 0) {
     await createNewChatGroup()
@@ -476,6 +485,7 @@ const onConversation = async ({
     fileParsing: fileParsing.value,
     usingNetwork: chatStore.usingNetwork,
     usingDeepThinking: chatStore.usingDeepThinking,
+    artifactReferences: artifactReferences || [],
   }
 
   console.log(usingPlugin.value)
@@ -514,34 +524,34 @@ const onConversation = async ({
   }
 
   const handleStreamResponseModel = async () => {
-    // 响应数据存储变量
-    let fullText = '' // 存储完整响应文本
-    let fullContent = '' // 存储额外内容（如canvas内容）
+    let fullText = ''
+    let fullContent = ''
     let networkSearchResult = ''
     let tool_calls = ''
     let promptReference = ''
     let assistantLogId = ''
     let mcpToolUse = ''
-    let finishReason = '' // 完成原因标识
+    let finishReason = ''
     let full_json = ''
     let fileVectorResult = ''
-    // 工作流相关变量
+    let responseMeta = ''
+    let runId = ''
+    let traceStatus = 'running'
+    let responseItems: ResponseItem[] = []
+    let artifacts: any[] = []
+    let toolSummary = ''
     let nodeType = ''
     let stepName = ''
     let workflowProgress = 0
 
-    // 缓冲区及显示控制变量
-    let textBuffer = '' // 文本缓冲区
-    let reasoningBuffer = '' // 推理文本缓冲区
-    let displayedText = '' // 已显示的文本
-    let displayedReasoningText = '' // 已显示的推理文本
-    let fullReasoningText = '' // 完整推理文本
-    let displayTimer: ReturnType<typeof setInterval> | null = null // 显示定时器
-    let isStreamActive = true // 流是否活跃标记
-    let lastUpdateTime = Date.now() // 最近一次数据更新时间
-
-    // 检查是否启用了缓存和打字效果
-    // const isCacheEnabled = useGlobalStore.isCacheEnabled
+    let textBuffer = ''
+    let reasoningBuffer = ''
+    let displayedText = ''
+    let displayedReasoningText = ''
+    let fullReasoningText = ''
+    let displayTimer: ReturnType<typeof setInterval> | null = null
+    let isStreamActive = true
+    let lastUpdateTime = Date.now()
     const isCacheEnabled = isStreamCacheEnabled.value
 
     // 五档速度定义（单位：毫秒）
@@ -589,6 +599,45 @@ const onConversation = async ({
         verySmall: baseBufferThresholds.verySmall, // 最小阈值保持不变
       }
     }
+
+    const mergeResponseItems = (incoming: unknown) => {
+      const normalized = normalizeResponseItems(incoming as any)
+      if (!normalized.length) return
+      responseItems = [...responseItems, ...normalized]
+      artifacts = artifactsFromResponseItems(responseItems, {
+        imageUrl: data?.imageUrl,
+        fileUrl: fileUrl || activeFileUrl.value || '',
+      })
+      toolSummary = summarizeTools(responseItems)
+    }
+
+    const ensureResponseItemsFromCurrentState = () => {
+      const fallbackItems = responseItemsFromLegacy({
+        chatId: Number(assistantLogId),
+        role: 'assistant',
+        content: fullText || displayedText,
+        reasoningText: fullReasoningText || displayedReasoningText,
+        networkSearchResult,
+        fileVectorResult,
+        tool_calls,
+        imageUrl: data?.imageUrl,
+        fileUrl: fileUrl || activeFileUrl.value || '',
+      })
+      responseItems = responseItems.length ? responseItems : fallbackItems
+      artifacts = artifactsFromResponseItems(responseItems, {
+        imageUrl: data?.imageUrl,
+        fileUrl: fileUrl || activeFileUrl.value || '',
+      })
+      toolSummary = summarizeTools(responseItems)
+    }
+
+    const currentAgentFields = () => ({
+      runId: runId || (assistantLogId ? `run-${assistantLogId}` : ''),
+      responseItems: serializeResponseItems(responseItems),
+      artifacts: JSON.stringify(artifacts),
+      traceStatus,
+      toolSummary,
+    })
 
     // 启动显示定时器
     const startDisplayTimer = () => {
@@ -754,16 +803,20 @@ const onConversation = async ({
         chatId: Number(assistantLogId),
         content: displayedText,
         reasoningText: displayedReasoningText,
+        responseMeta: responseMeta,
         mcpToolUse: mcpToolUse,
         networkSearchResult: networkSearchResult,
         fileVectorResult: fileVectorResult,
         tool_calls: tool_calls,
+        responseItems: responseItems,
         modelType: 1,
         modelName: useModelName,
         error: false,
         loading: true,
         imageUrl: data?.imageUrl,
+        response_items: responseItems,
         promptReference: promptReference,
+        ...currentAgentFields(),
         nodeType: nodeType,
         stepName: stepName,
         workflowProgress: workflowProgress,
@@ -802,6 +855,7 @@ const onConversation = async ({
         options,
         signal: controller.value.signal,
         extraParam: updatedExtraParam,
+        artifactReferences: artifactReferences || [],
         onDownloadProgress: ({ event }) => {
           // 使用新的fetch流式处理
           const responseText = event.target.responseText
@@ -820,6 +874,14 @@ const onConversation = async ({
             jsonLines.forEach((line: string) => {
               try {
                 const jsonObj = JSON.parse(line)
+
+                mergeResponseItems(jsonObj.responseItems || jsonObj.response_items)
+                if (jsonObj.artifacts) artifacts = jsonObj.artifacts
+                if (jsonObj.runId || jsonObj.run_id) runId = jsonObj.runId || jsonObj.run_id
+                if (jsonObj.traceStatus || jsonObj.trace_status)
+                  traceStatus = jsonObj.traceStatus || jsonObj.trace_status
+                if (jsonObj.toolSummary || jsonObj.tool_summary)
+                  toolSummary = jsonObj.toolSummary || jsonObj.tool_summary
 
                 // 处理用户余额
                 if (jsonObj.userBalance) authStore.updateUserBalance(jsonObj.userBalance)
@@ -850,16 +912,20 @@ const onConversation = async ({
                       chatId: Number(assistantLogId),
                       content: displayedText,
                       reasoningText: displayedReasoningText,
+                      responseMeta: responseMeta,
                       mcpToolUse: mcpToolUse,
                       networkSearchResult: networkSearchResult,
                       fileVectorResult: fileVectorResult,
                       tool_calls: tool_calls,
+                      responseItems: responseItems,
                       modelType: 1,
                       modelName: useModelName,
                       error: false,
                       loading: true,
                       imageUrl: data?.imageUrl,
+                      response_items: responseItems,
                       promptReference: promptReference,
+                      ...currentAgentFields(),
                       nodeType: nodeType,
                       stepName: stepName,
                       workflowProgress: workflowProgress,
@@ -879,6 +945,34 @@ const onConversation = async ({
 
                 // 处理其他属性
                 if (jsonObj.fileVectorResult) fileVectorResult = jsonObj.fileVectorResult
+                if (jsonObj.response_items) {
+                  const incomingItems = Array.isArray(jsonObj.response_items)
+                    ? jsonObj.response_items
+                    : [jsonObj.response_items]
+                  responseItems = responseItems.concat(incomingItems)
+                }
+                if (jsonObj.response_meta) {
+                  responseMeta = JSON.stringify(jsonObj.response_meta)
+                  updateGroupChat(dataSources.value.length - 1, {
+                    chatId: Number(assistantLogId),
+                    content: displayedText,
+                    reasoningText: displayedReasoningText,
+                    responseMeta: responseMeta,
+                    mcpToolUse: mcpToolUse,
+                    networkSearchResult: networkSearchResult,
+                    fileVectorResult: fileVectorResult,
+                    tool_calls: tool_calls,
+                    modelType: 1,
+                    modelName: useModelName,
+                    error: false,
+                    loading: true,
+                    imageUrl: data?.imageUrl,
+                    promptReference: promptReference,
+                    nodeType: nodeType,
+                    stepName: stepName,
+                    workflowProgress: workflowProgress,
+                  })
+                }
 
                 if (jsonObj.reasoning_content) {
                   fullContent += jsonObj.reasoning_content
@@ -898,16 +992,20 @@ const onConversation = async ({
                       chatId: Number(assistantLogId),
                       content: displayedText,
                       reasoningText: displayedReasoningText,
+                      responseMeta: responseMeta,
                       mcpToolUse: mcpToolUse,
                       networkSearchResult: networkSearchResult,
                       fileVectorResult: fileVectorResult,
                       tool_calls: tool_calls,
+                      responseItems: responseItems,
                       modelType: 1,
                       modelName: useModelName,
                       error: false,
                       loading: true,
                       imageUrl: data?.imageUrl,
+                      response_items: responseItems,
                       promptReference: promptReference,
+                      ...currentAgentFields(),
                       nodeType: nodeType,
                       stepName: stepName,
                       workflowProgress: workflowProgress,
@@ -930,7 +1028,17 @@ const onConversation = async ({
                 if (jsonObj.networkSearchResult) networkSearchResult = jsonObj.networkSearchResult
                 if (jsonObj.fileVectorResult) fileVectorResult = jsonObj.fileVectorResult
                 if (jsonObj.tool_calls) tool_calls = jsonObj.tool_calls
+                ensureResponseItemsFromCurrentState()
                 if (jsonObj.promptReference) promptReference = jsonObj.promptReference
+                if (Array.isArray(jsonObj.response_items)) {
+                  responseItems = jsonObj.response_items
+                  const artifactImageUrls = responseItems
+                    .filter(item => item?.type === 'artifact' && item?.artifactType === 'image')
+                    .map(item => item.storageUrl)
+                    .filter(Boolean)
+                  if (artifactImageUrls.length)
+                    data = { ...(data || {}), imageUrl: artifactImageUrls.join(',') }
+                }
                 if (jsonObj.chatId) {
                   assistantLogId = jsonObj.chatId
                   console.log('assistantLogId', Number(assistantLogId))
@@ -978,6 +1086,9 @@ const onConversation = async ({
         })
       }
 
+      traceStatus = finishReason === 'stop' ? 'completed' : traceStatus
+      ensureResponseItemsFromCurrentState()
+
       // 确保显示完整文本
       displayedText = fullText
       displayedReasoningText = fullReasoningText
@@ -986,16 +1097,20 @@ const onConversation = async ({
         chatId: Number(assistantLogId),
         content: displayedText,
         reasoningText: displayedReasoningText,
+        responseMeta: responseMeta,
         mcpToolUse: mcpToolUse,
         networkSearchResult: networkSearchResult,
         fileVectorResult: fileVectorResult,
         tool_calls: tool_calls,
+        responseItems: responseItems,
         modelType: 1,
         modelName: useModelName,
         error: false,
         loading: true,
         imageUrl: data?.imageUrl,
+        response_items: responseItems,
         promptReference: promptReference,
+        ...currentAgentFields(),
         nodeType: nodeType,
         stepName: stepName,
         workflowProgress: workflowProgress,
@@ -1208,14 +1323,14 @@ const toggleTextEditor = () => {
 
 // Handle the 'run-app' event from Agent workspace
 async function handleRunAppFromList(app: any) {
-  showAppListComponent.value = false // Hide AppList
+  showAppListComponent.value = false // Hide Agent workspace
   await chatStore.addNewChatGroup(Number(app.id))
-  // No need to check membership here, AppList handled it
+  // No need to check membership here, Agent workspace handled it
 }
 
 // Handle the 'show-member-dialog' event from Agent workspace
 function handleShowMemberDialogFromList() {
-  useGlobalStore.updateShowAppListComponent(false) // Hide AppList
+  useGlobalStore.updateShowAppListComponent(false) // Hide Agent workspace
   useGlobalStore.updateSettingsDialog(true, DIALOG_TABS.MEMBER)
 }
 
@@ -1249,7 +1364,7 @@ async function handleRunAppWithData({ app, formattedData }: { app: any; formatte
 async function fetchCurrentAppDetail(appId: number) {
   if (!appId) return
   try {
-    const res: any = await fetchQueryOneCatAPI({ id: appId })
+    const res: any = await fetchQueryOneAgentAPI({ id: appId })
     currentAppDetail.value = res.data
   } catch (error) {
     console.error('Error fetching app details:', error)
@@ -1367,12 +1482,15 @@ provide('tryParseJson', tryParseJson)
                     :chatId="item.chatId"
                     :content="item.content"
                     :reasoningText="item.reasoningText"
+                    :responseMeta="item.responseMeta"
+                    :responseItems="item.responseItems"
                     :model="item.model"
                     :modelType="item.modelType"
                     :modelName="item.modelName"
                     :modelAvatar="item.modelAvatar"
                     :status="item.status"
                     :imageUrl="item.imageUrl"
+                    :response_items="item.response_items"
                     :ttsUrl="item.ttsUrl"
                     :taskId="item.taskId"
                     :taskData="item.taskData"
@@ -1393,6 +1511,11 @@ provide('tryParseJson', tryParseJson)
                     :usingDeepThinking="false"
                     :useFileSearch="item.useFileSearch"
                     :tool_calls="item.tool_calls"
+                    :artifacts="item.artifacts"
+                    :attachments="item.attachments"
+                    :runId="item.runId"
+                    :traceStatus="item.traceStatus"
+                    :toolSummary="item.toolSummary"
                     @delete="handleDelete(item)"
                   />
                   <div class="sticky bottom-2 flex justify-center p-1 z-20">
@@ -1476,7 +1599,7 @@ provide('tryParseJson', tryParseJson)
       </template>
     </div>
 
-    <!-- 通用应用配置弹窗 -->
+    <!-- 通用 Agent 配置弹窗 -->
     <transition name="modal-fade">
       <!-- Backdrop and Centering Container -->
       <div

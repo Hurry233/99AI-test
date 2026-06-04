@@ -2,19 +2,86 @@ import { handleError } from '@/common/utils';
 import { correctApiBaseUrl } from '@/common/utils/correctApiBaseUrl';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
+import { FileWorkspaceService } from '../../fileWorkspace/fileWorkspace.service';
 import { GlobalConfigService } from '../../globalConfig/globalConfig.service';
 import { ToolExecutorService } from './tool-executor.service';
 import { ModelGatewayService } from './model-gateway.service';
 import { ToolRegistryService } from './tool-registry.service';
 
+export interface SearchDecision {
+  shouldSearch: boolean;
+  forced: boolean;
+  disabledByUser: boolean;
+  reason: string;
+}
+
 @Injectable()
 export class AgentRunService {
+  private readonly forceSearchPattern =
+    /(新闻|最新|最近|今天|今日|现在|当前|刚刚|实时|价格|股价|汇率|政策|法规|条例|比赛|赛程|比分|版本|发布|更新|latest|recent|today|current|now|news|price|policy|regulation|score|game|match|version|release|update)/i;
+
   constructor(
     private readonly globalConfigService: GlobalConfigService,
+    private readonly fileWorkspaceService: FileWorkspaceService,
     private readonly toolExecutorService: ToolExecutorService,
     private readonly modelGatewayService: ModelGatewayService,
     private readonly toolRegistryService: ToolRegistryService,
   ) {}
+
+  decideSearch(prompt: string, usingNetwork?: boolean): SearchDecision {
+    const forced = this.forceSearchPattern.test(prompt || '');
+    const disabledByUser = usingNetwork === false;
+
+    if (disabledByUser) {
+      return {
+        shouldSearch: false,
+        forced,
+        disabledByUser,
+        reason: forced
+          ? '用户已关闭搜索；该问题需要最新信息，回答会受到限制。'
+          : '用户已关闭搜索。',
+      };
+    }
+
+    if (usingNetwork || forced) {
+      return {
+        shouldSearch: true,
+        forced,
+        disabledByUser: false,
+        reason: forced ? '问题涉及时效性信息，自动启用搜索。' : '用户启用搜索。',
+      };
+    }
+
+    return {
+      shouldSearch: false,
+      forced: false,
+      disabledByUser: false,
+      reason: '问题未命中自动搜索规则。',
+    };
+  }
+
+  appendCitationGuard(answer: string, citations: Array<{ citationId?: string; url?: string }>) {
+    if (!citations.length || this.hasCitation(answer, citations)) {
+      return answer;
+    }
+
+    const citation = citations[0];
+    const citationText =
+      citation.citationId && citation.url ? `[[${citation.citationId}](${citation.url})]` : '';
+    return `${answer}${answer.endsWith('\n') ? '' : '\n\n'}来源：${citationText}`;
+  }
+
+  private hasCitation(answer: string, citations: Array<{ citationId?: string; url?: string }>) {
+    if (!answer) return false;
+
+    return citations.some(citation => {
+      if (!citation.url && !citation.citationId) return false;
+      return Boolean(
+        (citation.url && answer.includes(citation.url)) ||
+          (citation.citationId && new RegExp(`\\[\\[?${citation.citationId}\\]?`).test(answer)),
+      );
+    });
+  }
 
   private inferRunOptions(inputs: {
     prompt?: string;
@@ -437,6 +504,8 @@ export class AgentRunService {
       timeout: any;
       temperature: any;
       max_tokens?: any;
+      protocol?: 'responses' | 'chat_completions';
+      gatewayTrace?: any;
       extraParam?: any;
       searchResults?: any[];
       images?: string[];
@@ -452,6 +521,8 @@ export class AgentRunService {
       timeout,
       temperature,
       max_tokens,
+      protocol,
+      gatewayTrace,
       searchResults,
       images,
       extraParam,
@@ -469,6 +540,8 @@ export class AgentRunService {
       result,
     );
 
+    result.gatewayTrace = gatewayTrace;
+
     // 步骤2: 处理OpenAI聊天API调用
     await this.handleOpenAIChat(
       processedMessages,
@@ -479,6 +552,7 @@ export class AgentRunService {
         timeout,
         temperature,
         max_tokens,
+        protocol,
         extraParam,
         abortController,
         onProgress,
@@ -503,10 +577,14 @@ export class AgentRunService {
       isFileUpload: any;
       isImageUpload?: any;
       fileUrl?: any;
+      userId?: number;
+      sessionId?: string;
       usingNetwork?: boolean;
       timeout: any;
       proxyUrl: any;
       modelAvatar?: any;
+      protocol?: 'responses' | 'chat_completions';
+      gatewayTrace?: any;
       usingDeepThinking?: boolean;
       usingMcpTool?: boolean;
       isMcpTool?: boolean;
@@ -538,8 +616,13 @@ export class AgentRunService {
       timeout,
       proxyUrl,
       modelAvatar,
+      protocol,
+      gatewayTrace,
       usingDeepThinking,
       usingNetwork,
+      fileUrl,
+      userId,
+      sessionId,
       extraParam: explicitExtraParam,
       deepThinkingType,
       onProgress,
@@ -561,6 +644,10 @@ export class AgentRunService {
       full_reasoning_content: '',
       networkSearchResult: '',
       fileVectorResult: '',
+      response_items: [],
+      searchTrace: null,
+      run_status: 'ok',
+      degradedReason: '',
       finishReason: null,
     };
 
@@ -574,16 +661,52 @@ export class AgentRunService {
     });
 
     try {
+      const searchDecision = this.decideSearch(prompt || '', usingNetwork);
+      result.searchDecision = searchDecision;
+
+      if (searchDecision.disabledByUser && searchDecision.forced) {
+        result.run_status = 'degraded';
+        result.degradedReason = searchDecision.reason;
+        onProgress?.({
+          run_status: result.run_status,
+          degradedReason: result.degradedReason,
+        } as any);
+        onDatabase?.({
+          run_status: result.run_status,
+          degradedReason: result.degradedReason,
+        });
+      }
+
       // 步骤1: 处理网络搜索 - 使用NetSearchService
       const { searchResults, images } = await this.toolExecutorService.runWebSearch(
         prompt || '',
         {
-          usingNetwork,
+          usingNetwork: searchDecision.shouldSearch,
           onProgress,
           onDatabase,
         },
         result,
       );
+
+      const fileSearchResults = await this.fileWorkspaceService.buildSearchContext(
+        prompt || '',
+        fileUrl,
+        userId,
+        sessionId,
+      );
+      if (fileSearchResults.length > 0) {
+        result.fileVectorResult = JSON.stringify(fileSearchResults);
+        onProgress?.({ fileVectorResult: result.fileVectorResult } as any);
+        onDatabase?.({ fileVectorResult: result.fileVectorResult });
+
+        const filePrompt = `
+
+以下是 file_search 工具返回的文件引用片段，回答中应引用文件名、页码、sheet、行列或段落ID：
+${JSON.stringify(fileSearchResults, null, 2)}`;
+        const systemIndex = messagesHistory.findIndex((msg: any) => msg.role === 'system');
+        if (systemIndex >= 0) messagesHistory[systemIndex].content += filePrompt;
+        else messagesHistory.unshift({ role: 'system', content: filePrompt });
+      }
 
       // 步骤5: 处理深度思考
       const shouldEndRequest = await this.handleDeepThinking(
@@ -620,6 +743,8 @@ export class AgentRunService {
           timeout,
           temperature,
           max_tokens,
+          protocol,
+          gatewayTrace,
           extraParam,
           searchResults,
           images,
@@ -628,6 +753,31 @@ export class AgentRunService {
         },
         result,
       );
+
+      if (searchResults.length > 0) {
+        const citedContent = this.appendCitationGuard(result.full_content, searchResults);
+        if (citedContent !== result.full_content) {
+          const appended = citedContent.slice(result.full_content.length);
+          result.full_content = citedContent;
+          result.content = [
+            {
+              type: 'text',
+              text: appended,
+            },
+          ];
+          onProgress?.({
+            content: result.content,
+          });
+        }
+      } else if (searchDecision.shouldSearch) {
+        result.run_status = 'degraded';
+        result.degradedReason =
+          result.degradedReason || '搜索未返回可引用来源，已降级为无实时来源回答。';
+        onProgress?.({
+          run_status: result.run_status,
+          degradedReason: result.degradedReason,
+        } as any);
+      }
 
       result.content = [
         {
@@ -831,6 +981,7 @@ export class AgentRunService {
       timeout: any;
       temperature: any;
       max_tokens?: any;
+      protocol?: 'responses' | 'chat_completions';
       extraParam?: any;
       abortController: AbortController;
       onProgress?: (data: any) => void;

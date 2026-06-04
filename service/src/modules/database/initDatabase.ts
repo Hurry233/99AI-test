@@ -3,6 +3,7 @@ import { config as loadEnv } from 'dotenv';
 import * as mysql from 'mysql2/promise';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { AppEntity } from '../app/app.entity';
+import { ArtifactEntity } from '../artifact/artifact.entity';
 import { AppCatsEntity } from '../app/appCats.entity';
 import { UserAppsEntity } from '../app/userApps.entity';
 import { AutoReplyEntity } from '../autoReply/autoReply.entity';
@@ -12,6 +13,10 @@ import { ChatGroupEntity } from '../chatGroup/chatGroup.entity';
 import { ChatLogEntity } from '../chatLog/chatLog.entity';
 import { CramiEntity } from '../crami/crami.entity';
 import { CramiPackageEntity } from '../crami/cramiPackage.entity';
+import { DocumentChunkEntity } from '../fileWorkspace/documentChunk.entity';
+import { FileWorkspaceEntity } from '../fileWorkspace/fileWorkspace.entity';
+import { PagePreviewEntity } from '../fileWorkspace/pagePreview.entity';
+import { SheetCellEntity } from '../fileWorkspace/sheetCell.entity';
 import { ConfigEntity } from '../globalConfig/config.entity';
 import { ModelsEntity } from '../models/models.entity';
 import { OrderEntity } from '../order/order.entity';
@@ -35,6 +40,7 @@ const dataSourceOptions: DataSourceOptions = {
   password: process.env.DB_PASS,
   database: process.env.DB_DATABASE,
   entities: [
+    ArtifactEntity,
     Share,
     AutoReplyEntity,
     CramiEntity,
@@ -57,6 +63,10 @@ const dataSourceOptions: DataSourceOptions = {
     AppCatsEntity,
     AppEntity,
     OrderEntity,
+    FileWorkspaceEntity,
+    DocumentChunkEntity,
+    SheetCellEntity,
+    PagePreviewEntity,
   ],
   synchronize: false, // 禁用自动同步，改为根据情况动态开启
   charset: 'utf8mb4',
@@ -223,6 +233,13 @@ async function runAllMigrations() {
       } catch (error) {
         Logger.log(`迁移chatlog表${column}列时跳过: ${error.message}`, 'Database');
       }
+    }
+
+    // 4. responseItems 从字符串 JSON 迁移为数据库 JSON 字段，承载类型化 trace 数组
+    try {
+      await migrateColumnType('chatlog', 'responseItems', 'JSON', conn);
+    } catch (error) {
+      Logger.log(`迁移chatlog表responseItems列时跳过: ${error.message}`, 'Database');
     }
   } finally {
     await conn.end();

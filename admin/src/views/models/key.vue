@@ -80,6 +80,19 @@ meta:
     systemPrompt: '',
     systemPromptType: 0,
     drawingType: 0,
+    supportsResponses: false,
+    supportsVision: false,
+    supportsImageGeneration: false,
+    supportsTools: false,
+    supportsJsonSchema: false,
+    supportsReasoning: false,
+    supportsFiles: false,
+    contextWindow: 64000,
+    maxOutputTokens: 4096,
+    pricing: '',
+    rateLimit: '',
+    defaultFallbackModel: '',
+    allowedTools: '',
   });
 
   /**
@@ -302,6 +315,19 @@ meta:
       systemPrompt,
       systemPromptType,
       drawingType,
+      supportsResponses,
+      supportsVision,
+      supportsImageGeneration,
+      supportsTools,
+      supportsJsonSchema,
+      supportsReasoning,
+      supportsFiles,
+      contextWindow,
+      maxOutputTokens,
+      pricing,
+      rateLimit,
+      defaultFallbackModel,
+      allowedTools,
     } = row;
     nextTick(() => {
       Object.assign(formPackage, {
@@ -332,6 +358,19 @@ meta:
         systemPrompt,
         systemPromptType,
         drawingType: Number(drawingType) || 0,
+        supportsResponses: Boolean(supportsResponses),
+        supportsVision: Boolean(supportsVision),
+        supportsImageGeneration: Boolean(supportsImageGeneration),
+        supportsTools: Boolean(supportsTools),
+        supportsJsonSchema: Boolean(supportsJsonSchema),
+        supportsReasoning: Boolean(supportsReasoning),
+        supportsFiles: Boolean(supportsFiles),
+        contextWindow: contextWindow || maxModelTokens || 64000,
+        maxOutputTokens: maxOutputTokens || max_tokens || 4096,
+        pricing: pricing || '',
+        rateLimit: rateLimit || '',
+        defaultFallbackModel: defaultFallbackModel || '',
+        allowedTools: allowedTools || '',
       });
     });
     visible.value = true;
@@ -463,6 +502,28 @@ meta:
 
   function showDevOnlyMessage() {
     ElMessage({ type: 'warning', message: '此功能仅开发版支持！' });
+  }
+
+  function getCapabilityLabels(row: any) {
+    const labels = [];
+    if (row.supportsVision || row.isImageUpload > 0) labels.push('视觉');
+    if (row.supportsImageGeneration) labels.push('生图');
+    if (row.supportsTools || row.isMcpTool) labels.push('工具');
+    if (row.supportsJsonSchema) labels.push('结构化');
+    if (row.supportsReasoning || row.deepThinkingType > 0) labels.push('推理');
+    if (row.supportsFiles || row.isFileUpload > 0) labels.push('文件');
+    return labels;
+  }
+
+  function estimateCostPreview() {
+    try {
+      const pricing = formPackage.pricing ? JSON.parse(formPackage.pricing) : {};
+      const input = Number(pricing.input || pricing.inputPer1M || 0);
+      const output = Number(pricing.output || pricing.outputPer1M || 0);
+      return ((1000 / 1000000) * input + (1000 / 1000000) * output || 0).toFixed(6);
+    } catch (error) {
+      return '价格 JSON 格式错误';
+    }
   }
 
   const beforeAvatarUpload: UploadProps['beforeUpload'] = (rawFile) => {
@@ -608,6 +669,19 @@ meta:
             <el-tag :type="scope.row.model.includes('gpt-4') ? 'success' : 'info'">
               {{ scope.row.model }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="用户可见能力" width="220">
+          <template #default="scope">
+            <el-tag
+              v-for="label in getCapabilityLabels(scope.row)"
+              :key="label"
+              class="mr-1 mb-1"
+              type="info"
+            >
+              {{ label }}
+            </el-tag>
+            <span v-if="!getCapabilityLabels(scope.row).length">-</span>
           </template>
         </el-table-column>
         <el-table-column prop="isTokenBased" align="center" label="Token计费" width="120">
@@ -1110,6 +1184,83 @@ meta:
             v-model.number="formPackage.tokenFeeRatio"
             placeholder="请填写token计费比例"
             style="width: 80%"
+          />
+        </el-form-item>
+
+        <el-divider content-position="left">模型能力与网关策略</el-divider>
+
+        <el-form-item label="能力按钮">
+          <el-checkbox v-model="formPackage.supportsVision">视觉理解</el-checkbox>
+          <el-checkbox v-model="formPackage.supportsImageGeneration">图片生成</el-checkbox>
+          <el-checkbox v-model="formPackage.supportsTools">工具调用</el-checkbox>
+          <el-checkbox v-model="formPackage.supportsJsonSchema">结构化输出</el-checkbox>
+          <el-checkbox v-model="formPackage.supportsReasoning">推理</el-checkbox>
+          <el-checkbox v-model="formPackage.supportsFiles">文件输入</el-checkbox>
+          <el-tooltip class="box-item" effect="dark" placement="right">
+            <template #content>
+              <div style="width: 280px">
+                这些能力会展示为用户可理解的按钮；实际 Responses / Chat Completions
+                协议由后端模型网关根据场景自动选择。
+              </div>
+            </template>
+            <el-icon class="ml-3 cursor-pointer"><QuestionFilled /></el-icon>
+          </el-tooltip>
+        </el-form-item>
+
+        <el-form-item label="Responses协议">
+          <el-switch v-model="formPackage.supportsResponses" />
+          <span class="ml-3 text-xs text-gray-400"
+            >仅表示模型可用 Responses，前端不会直接决定协议。</span
+          >
+        </el-form-item>
+
+        <el-form-item label="上下文窗口">
+          <el-input-number v-model="formPackage.contextWindow" :min="0" :step="1024" />
+        </el-form-item>
+
+        <el-form-item label="最大输出">
+          <el-input-number v-model="formPackage.maxOutputTokens" :min="0" :step="512" />
+        </el-form-item>
+
+        <el-form-item label="默认Fallback">
+          <el-select
+            v-model="formPackage.defaultFallbackModel"
+            filterable
+            clearable
+            allow-create
+            placeholder="请选择或填写 fallback 模型"
+          >
+            <el-option v-for="item in MODEL_LIST" :key="item" :label="item" :value="item" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="工具允许列表">
+          <el-input
+            v-model="formPackage.allowedTools"
+            type="textarea"
+            :rows="2"
+            placeholder='JSON 数组，例如 ["web_search","mcp"]'
+          />
+        </el-form-item>
+
+        <el-form-item label="价格配置">
+          <el-input
+            v-model="formPackage.pricing"
+            type="textarea"
+            :rows="2"
+            placeholder='JSON，例如 {"input":2.5,"output":10}，单位：每百万 tokens'
+          />
+          <div class="text-xs text-gray-400 mt-1">
+            按 1000 输入 + 1000 输出 token 预估成本：{{ estimateCostPreview() }}
+          </div>
+        </el-form-item>
+
+        <el-form-item label="限流配置">
+          <el-input
+            v-model="formPackage.rateLimit"
+            type="textarea"
+            :rows="2"
+            placeholder='JSON，例如 {"requestsPerMinute":60,"tokensPerMinute":60000}'
           />
         </el-form-item>
 

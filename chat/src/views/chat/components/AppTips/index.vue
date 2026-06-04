@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { fetchQueryOneCatAPI } from '@/api/appStore'
+import { fetchQueryOneAgentAPI } from '@/api/agent'
 import SvgIcon from '@/components/common/SvgIcon/index.vue'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { inject, onMounted, ref, watch } from 'vue'
@@ -15,7 +15,7 @@ const onConversation = inject<any>('onConversation')
 
 const queryAppInfo = async (appId: number) => {
   try {
-    const res: any = await fetchQueryOneCatAPI({ id: appId })
+    const res: any = await fetchQueryOneAgentAPI({ id: appId })
     appDetail.value = res.data
   } catch (error) {}
 }
@@ -66,7 +66,7 @@ watch(
     <div class="w-full md:max-w-[40rem] mb-4">
       <div class="flex items-center justify-center">
         <div v-if="appDetail.coverImg" class="flex-shrink-0 dark:ring-gray-400 rounded-lg">
-          <img :src="appDetail.coverImg" class="rounded-full w-10 h-10 mr-4" alt="app-image" />
+          <img :src="appDetail.coverImg" class="rounded-full w-10 h-10 mr-4" alt="Agent icon" />
         </div>
         <div
           v-else

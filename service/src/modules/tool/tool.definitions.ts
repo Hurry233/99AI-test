@@ -1,0 +1,138 @@
+import { ToolDefinition } from './tool.types';
+
+const textInputSchema = (requiredField = 'query') => ({
+  type: 'object',
+  properties: {
+    [requiredField]: { type: 'string' },
+    limit: { type: 'number' },
+  },
+  required: [requiredField],
+  additionalProperties: true,
+});
+
+const objectOutputSchema = {
+  type: 'object',
+  properties: {
+    status: { type: 'string' },
+    data: { type: 'object' },
+  },
+  required: ['status'],
+  additionalProperties: true,
+};
+
+export const BUILT_IN_TOOL_DEFINITIONS: ToolDefinition[] = [
+  {
+    name: 'web_search',
+    description: 'Searches the public web and returns concise, source-aware results.',
+    inputSchema: textInputSchema('query'),
+    outputSchema: objectOutputSchema,
+    permissions: { roles: ['user', 'admin', 'super'], requireLogin: true, requireRiskCheck: true },
+    quotaType: 'model3',
+    estimatedCost: 1,
+    timeoutMs: 15000,
+    retryPolicy: { retries: 1, retryDelayMs: 500 },
+    frontendCard: { type: 'search', title: 'Web Search', icon: 'search' },
+  },
+  {
+    name: 'file_search',
+    description: 'Searches indexed user files and returns matching snippets.',
+    inputSchema: textInputSchema('query'),
+    outputSchema: objectOutputSchema,
+    permissions: { roles: ['user', 'admin', 'super'], requireLogin: true, requireRiskCheck: true },
+    quotaType: 'model3',
+    estimatedCost: 1,
+    timeoutMs: 10000,
+    retryPolicy: { retries: 0, retryDelayMs: 0 },
+    frontendCard: { type: 'file-search', title: 'File Search', icon: 'file-search' },
+  },
+  {
+    name: 'file_reader',
+    description: 'Reads an authorized file and returns structured file content.',
+    inputSchema: textInputSchema('fileId'),
+    outputSchema: objectOutputSchema,
+    permissions: { roles: ['user', 'admin', 'super'], requireLogin: true, requireRiskCheck: false },
+    quotaType: 'model3',
+    estimatedCost: 1,
+    timeoutMs: 10000,
+    retryPolicy: { retries: 0, retryDelayMs: 0 },
+    frontendCard: { type: 'file-reader', title: 'File Reader', icon: 'file-text' },
+  },
+  {
+    name: 'image_generation',
+    description: 'Generates an image from a prompt.',
+    inputSchema: textInputSchema('prompt'),
+    outputSchema: objectOutputSchema,
+    permissions: { roles: ['user', 'admin', 'super'], requireLogin: true, requireRiskCheck: true },
+    quotaType: 'draw_mj',
+    estimatedCost: 1,
+    timeoutMs: 60000,
+    retryPolicy: { retries: 1, retryDelayMs: 1000 },
+    frontendCard: { type: 'image', title: 'Image Generation', icon: 'image' },
+  },
+  {
+    name: 'image_edit',
+    description: 'Edits an existing image using a text instruction.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        imageId: { type: 'string' },
+        prompt: { type: 'string' },
+      },
+      required: ['imageId', 'prompt'],
+      additionalProperties: true,
+    },
+    outputSchema: objectOutputSchema,
+    permissions: { roles: ['user', 'admin', 'super'], requireLogin: true, requireRiskCheck: true },
+    quotaType: 'draw_mj',
+    estimatedCost: 1,
+    timeoutMs: 60000,
+    retryPolicy: { retries: 1, retryDelayMs: 1000 },
+    frontendCard: { type: 'image-edit', title: 'Image Edit', icon: 'edit' },
+  },
+  {
+    name: 'artifact_writer',
+    description: 'Writes structured artifacts for the current agent run.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        content: { type: 'string' },
+        mimeType: { type: 'string' },
+      },
+      required: ['title', 'content'],
+      additionalProperties: true,
+    },
+    outputSchema: objectOutputSchema,
+    permissions: { roles: ['user', 'admin', 'super'], requireLogin: true, requireRiskCheck: true },
+    quotaType: 'model3',
+    estimatedCost: 1,
+    timeoutMs: 10000,
+    retryPolicy: { retries: 0, retryDelayMs: 0 },
+    frontendCard: { type: 'artifact', title: 'Artifact Writer', icon: 'box' },
+  },
+  {
+    name: 'business_plugin',
+    description: 'Invokes an enabled business plugin with a structured payload.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        pluginName: { type: 'string' },
+        payload: { type: 'object' },
+      },
+      required: ['pluginName', 'payload'],
+      additionalProperties: true,
+    },
+    outputSchema: objectOutputSchema,
+    permissions: {
+      roles: ['user', 'admin', 'super'],
+      requireLogin: true,
+      requireMember: true,
+      requireRiskCheck: true,
+    },
+    quotaType: 'model4',
+    estimatedCost: 1,
+    timeoutMs: 30000,
+    retryPolicy: { retries: 1, retryDelayMs: 1000 },
+    frontendCard: { type: 'plugin', title: 'Business Plugin', icon: 'plug' },
+  },
+];

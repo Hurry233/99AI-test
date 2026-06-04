@@ -5,9 +5,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import excel from 'exceljs';
 import { Request, Response } from 'express';
 import { In, Like, MoreThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { ArtifactEntity } from '../artifact/artifact.entity';
 import { ChatGroupEntity } from '../chatGroup/chatGroup.entity';
 import { UserEntity } from '../user/user.entity';
-import { ChatLogEntity } from './chatLog.entity';
+import { AgentTraceItem, ChatLogEntity } from './chatLog.entity';
 import { ChatListDto } from './dto/chatList.dto';
 import { DelDto } from './dto/del.dto';
 import { DelByGroupDto } from './dto/delByGroup.dto';
@@ -20,6 +21,150 @@ import { recDrawImgDto } from './dto/recDrawImg.dto';
 import { JwtPayload } from 'src/types/express';
 import { ModelsService } from '../models/models.service';
 import { QuerySingleChatDto } from './dto/querySingleChat.dto';
+import { RetryTraceItemDto } from './dto/retryTraceItem.dto';
+
+const TRACE_DEFAULT_PAGE_SIZE = 20;
+
+function safeJsonParse(value: any): any {
+  if (!value) return null;
+  if (typeof value !== 'string') return value;
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    return null;
+  }
+}
+
+function normalizeTraceItems(chatLog: Partial<ChatLogEntity>): AgentTraceItem[] {
+  const explicitItems = Array.isArray(chatLog.responseItems)
+    ? chatLog.responseItems
+    : safeJsonParse(chatLog.responseItems);
+  const items: AgentTraceItem[] = Array.isArray(explicitItems) ? [...explicitItems] : [];
+  const now = chatLog.updatedAt ? new Date(chatLog.updatedAt as any).toISOString() : undefined;
+
+  const hasType = (type: AgentTraceItem['type']) => items.some(item => item.type === type);
+
+  const networkSearchResult = safeJsonParse(chatLog.networkSearchResult);
+  const searchResults = Array.isArray(networkSearchResult)
+    ? networkSearchResult
+    : Array.isArray(networkSearchResult?.searchResults)
+    ? networkSearchResult.searchResults
+    : [];
+  if (searchResults.length && !hasType('search')) {
+    items.push({
+      id: `search-${chatLog.id || 'legacy'}`,
+      type: 'search',
+      title: '联网搜索',
+      summary: `已浏览 ${searchResults.length} 个网页`,
+      status: 'success',
+      updatedAt: now,
+      data: { results: searchResults },
+    });
+  }
+
+  const fileVectorResult = safeJsonParse(chatLog.fileVectorResult);
+  const fileResults = Array.isArray(fileVectorResult)
+    ? fileVectorResult
+    : Array.isArray(fileVectorResult?.results)
+    ? fileVectorResult.results
+    : [];
+  if (fileResults.length && !hasType('file_read')) {
+    items.push({
+      id: `file-read-${chatLog.id || 'legacy'}`,
+      type: 'file_read',
+      title: '读取文件',
+      summary: `命中 ${fileResults.length} 条文件片段`,
+      status: 'success',
+      updatedAt: now,
+      data: { results: fileResults },
+    });
+  }
+
+  if (chatLog.imageUrl && !hasType('image_generation')) {
+    const urls = String(chatLog.imageUrl)
+      .split(',')
+      .map(url => url.trim())
+      .filter(Boolean);
+    if (urls.length) {
+      items.push({
+        id: `image-${chatLog.id || 'legacy'}`,
+        type: 'image_generation',
+        title: '图片生成',
+        summary: `生成 ${urls.length} 张图片`,
+        status: 'success',
+        updatedAt: now,
+        data: { urls },
+      });
+    }
+  }
+
+  const taskData = safeJsonParse(chatLog.taskData);
+  const artifactUrl = chatLog.fileUrl || taskData?.url || taskData?.artifactUrl;
+  if (artifactUrl && !hasType('artifact')) {
+    items.push({
+      id: `artifact-${chatLog.id || 'legacy'}`,
+      type: 'artifact',
+      title: taskData?.name || '生成产物',
+      summary: artifactUrl,
+      status: 'success',
+      updatedAt: now,
+      data: { url: artifactUrl, name: taskData?.name, mimeType: taskData?.mimeType },
+    });
+  }
+
+  const toolCalls = safeJsonParse(chatLog.tool_calls);
+  if (toolCalls && !hasType('tool')) {
+    items.push({
+      id: `tool-${chatLog.id || 'legacy'}`,
+      type: 'tool',
+      title: '工具调用',
+      summary: Array.isArray(toolCalls) ? `${toolCalls.length} 次工具调用` : '已调用工具',
+      status: 'success',
+      updatedAt: now,
+      data: { toolCalls },
+    });
+  }
+
+  if ((chatLog.status === 4 || chatLog.status === 5) && !hasType('error')) {
+    items.push({
+      id: `error-${chatLog.id || 'legacy'}`,
+      type: 'error',
+      title: '执行失败',
+      summary: chatLog.content || chatLog.answer || '处理请求时发生错误',
+      status: 'failed',
+      updatedAt: now,
+      error: chatLog.content || chatLog.answer || '处理请求时发生错误',
+    });
+  }
+
+  return items;
+}
+
+function formatTrace(chatLog: Partial<ChatLogEntity>, params: any = {}) {
+  const items = normalizeTraceItems(chatLog);
+  const traceMode = params.traceMode || (params.includeTrace === 'false' ? 'none' : 'full');
+  if (traceMode === 'none') {
+    return { responseItems: [], trace: { mode: 'none', total: items.length } };
+  }
+
+  if (traceMode === 'page') {
+    const page = Math.max(Number(params.tracePage) || 1, 1);
+    const size = Math.max(Number(params.traceSize) || TRACE_DEFAULT_PAGE_SIZE, 1);
+    const start = (page - 1) * size;
+    return {
+      responseItems: items.slice(start, start + size),
+      trace: {
+        mode: 'page',
+        page,
+        size,
+        total: items.length,
+        hasMore: start + size < items.length,
+      },
+    };
+  }
+
+  return { responseItems: items, trace: { mode: 'full', total: items.length } };
+}
 
 @Injectable()
 export class ChatLogService {
@@ -30,17 +175,23 @@ export class ChatLogService {
     private readonly userEntity: Repository<UserEntity>,
     @InjectRepository(ChatGroupEntity)
     private readonly chatGroupEntity: Repository<ChatGroupEntity>,
+    @InjectRepository(ArtifactEntity)
+    private readonly artifactEntity: Repository<ArtifactEntity>,
     private readonly modelsService: ModelsService,
   ) {}
 
   /* 记录问答日志 */
   async saveChatLog(logInfo): Promise<any> {
+    if (typeof logInfo?.responseItems === 'string')
+      logInfo.responseItems = safeJsonParse(logInfo.responseItems) || [];
     const savedLog = await this.chatLogEntity.save(logInfo);
     return savedLog; // 这里返回保存后的实体，包括其 ID
   }
 
   /* 更新问答日志 */
   async updateChatLog(id, logInfo) {
+    if (typeof logInfo?.responseItems === 'string')
+      logInfo.responseItems = safeJsonParse(logInfo.responseItems) || [];
     return await this.chatLogEntity.update({ id }, logInfo);
   }
 
@@ -232,7 +383,9 @@ export class ChatLogService {
         reasoning_content,
         tool_calls,
         content,
+        responseItems,
       } = item;
+      const parsedResponseItems = this.parseResponseItems(responseItems);
       return {
         chatId: id,
         dateTime: formatDate(createdAt),
@@ -246,7 +399,8 @@ export class ChatLogService {
         customId: customId,
         role: role,
         error: false,
-        imageUrl: imageUrl || fileInfo || '',
+        imageUrl: imageUrl || fileInfo || this.getFirstArtifactUrl(parsedResponseItems) || '',
+        response_items: parsedResponseItems,
         fileUrl: fileUrl,
         ttsUrl: ttsUrl,
         videoUrl: videoUrl,
@@ -261,8 +415,26 @@ export class ChatLogService {
         networkSearchResult: networkSearchResult,
         fileVectorResult: fileVectorResult,
         taskId: taskId,
+        ...formatTrace(item, params),
       };
     });
+  }
+
+  private parseResponseItems(responseItems?: string | AgentTraceItem[]) {
+    if (!responseItems) return [];
+    if (Array.isArray(responseItems)) return responseItems;
+    try {
+      const parsed = JSON.parse(responseItems);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      Logger.debug(`解析responseItems失败: ${error.message}`, 'ChatLogService');
+      return [];
+    }
+  }
+
+  private getFirstArtifactUrl(responseItems: any[]) {
+    return responseItems?.find(item => item?.type === 'artifact' && item?.artifactType === 'image')
+      ?.storageUrl;
   }
 
   /* 查询历史对话的列表 */
@@ -303,11 +475,14 @@ export class ChatLogService {
           reasoning_content,
           tool_calls,
           progress,
+          responseItems,
         } = item;
+        const parsedResponseItems = this.parseResponseItems(responseItems);
         const record = {
           role: role,
           content: content || (role === 'assistant' ? answer : prompt),
-          imageUrl: imageUrl || fileInfo || '',
+          imageUrl: imageUrl || fileInfo || this.getFirstArtifactUrl(parsedResponseItems) || '',
+          response_items: parsedResponseItems,
           fileUrl: fileUrl,
           ttsUrl: ttsUrl,
           videoUrl: videoUrl,
@@ -315,6 +490,7 @@ export class ChatLogService {
           reasoningText: reasoning_content,
           tool_calls: tool_calls,
           progress,
+          ...formatTrace(item),
         };
         // Logger.debug('处理记录:', JSON.stringify(record, null, 2));
         return record;
@@ -454,6 +630,46 @@ export class ChatLogService {
     }
   }
 
+  async retryTraceItem(req: Request, body: RetryTraceItemDto) {
+    const { id: userId } = req.user;
+    const { runId, failedItemId } = body;
+    const chatLog = await this.chatLogEntity.findOne({ where: { id: Number(runId), userId } });
+
+    if (!chatLog) {
+      throw new HttpException('你重试的运行记录不存在、请检查！', HttpStatus.BAD_REQUEST);
+    }
+
+    const items = normalizeTraceItems(chatLog);
+    const targetIndex = items.findIndex(item => item.id === failedItemId);
+    if (targetIndex < 0) {
+      throw new HttpException('你重试的步骤不存在、请检查！', HttpStatus.BAD_REQUEST);
+    }
+
+    const target = items[targetIndex];
+    if (target.status !== 'failed' && target.type !== 'error') {
+      throw new HttpException('只能重试失败的步骤！', HttpStatus.BAD_REQUEST);
+    }
+
+    items[targetIndex] = {
+      ...target,
+      status: 'pending',
+      updatedAt: new Date().toISOString(),
+      data: {
+        ...(target.data || {}),
+        retryRequestedAt: new Date().toISOString(),
+      },
+    };
+
+    await this.chatLogEntity.update({ id: Number(runId), userId }, { responseItems: items });
+
+    return {
+      runId: Number(runId),
+      failedItemId,
+      responseItems: items,
+      message: '已提交重试请求',
+    };
+  }
+
   /**
    * 查询单条聊天记录
    * @param req 请求对象
@@ -512,6 +728,7 @@ export class ChatLogService {
         fileVectorResult: chatLog.fileVectorResult || '',
         pluginParam: chatLog.pluginParam || '',
         modelAvatar: chatLog.modelAvatar || '',
+        ...formatTrace(chatLog, params),
       };
 
       // 返回成功结果

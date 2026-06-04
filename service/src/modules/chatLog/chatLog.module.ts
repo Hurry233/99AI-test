@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ArtifactEntity } from '../artifact/artifact.entity';
 import { ChatGroupEntity } from '../chatGroup/chatGroup.entity';
 import { UserEntity } from '../user/user.entity';
 import { ChatLogController } from './chatLog.controller';
@@ -8,7 +9,7 @@ import { ChatLogService } from './chatLog.service';
 
 @Global()
 @Module({
-  imports: [TypeOrmModule.forFeature([ChatLogEntity, UserEntity, ChatGroupEntity])],
+  imports: [TypeOrmModule.forFeature([ChatLogEntity, UserEntity, ChatGroupEntity, ArtifactEntity])],
   controllers: [ChatLogController],
   providers: [ChatLogService],
   exports: [ChatLogService],

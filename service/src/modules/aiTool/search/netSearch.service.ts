@@ -3,6 +3,55 @@ import { Injectable, Logger } from '@nestjs/common';
 import fetch from 'cross-fetch';
 import { GlobalConfigService } from '../../globalConfig/globalConfig.service';
 
+export interface UnifiedSearchResult {
+  query: string;
+  title: string;
+  url: string;
+  snippet: string;
+  publishedAt: string | null;
+  sourceType: 'legacy_net_search' | 'responses_hosted_web_search' | 'unknown';
+  confidence: number;
+  citationId: string;
+  resultIndex: number;
+  icon?: string;
+  media?: string;
+}
+
+export type UnifiedResponseItem =
+  | {
+      type: 'tool_call';
+      tool_name: 'web_search';
+      query: string;
+      startedAt: string;
+      completedAt?: string;
+    }
+  | {
+      type: 'tool_result';
+      tool_name: 'web_search';
+      query: string;
+      results: UnifiedSearchResult[];
+      latencyMs: number;
+      sourceCount: number;
+    }
+  | {
+      type: 'citation';
+      citationId: string;
+      title: string;
+      url: string;
+      snippet: string;
+      publishedAt: string | null;
+      sourceType: UnifiedSearchResult['sourceType'];
+      confidence: number;
+    };
+
+export interface SearchTrace {
+  query: string;
+  latencyMs: number;
+  sourceCount: number;
+  finalCitationUrls: string[];
+  failureReason?: string;
+}
+
 @Injectable()
 export class NetSearchService {
   constructor(private readonly globalConfigService: GlobalConfigService) {}
@@ -22,14 +71,40 @@ export class NetSearchService {
       onDatabase?: (data: any) => void;
     },
     result: any,
-  ): Promise<{ searchResults: any[]; images: string[] }> {
+  ): Promise<{
+    searchResults: UnifiedSearchResult[];
+    images: string[];
+    response_items: UnifiedResponseItem[];
+    trace: SearchTrace;
+    error?: string;
+  }> {
     const { usingNetwork, onProgress, onDatabase } = inputs;
-    let searchResults: any[] = [];
+    let searchResults: UnifiedSearchResult[] = [];
     let images: string[] = [];
+    const startedAt = Date.now();
+    const response_items: UnifiedResponseItem[] = [
+      {
+        type: 'tool_call',
+        tool_name: 'web_search',
+        query: prompt,
+        startedAt: new Date(startedAt).toISOString(),
+      },
+    ];
 
     // 如果不使用网络搜索，直接返回空结果
     if (!usingNetwork) {
-      return { searchResults, images };
+      return {
+        searchResults,
+        images,
+        response_items: [],
+        trace: {
+          query: prompt,
+          latencyMs: 0,
+          sourceCount: 0,
+          finalCitationUrls: [],
+          failureReason: 'search_disabled',
+        },
+      };
     }
 
     try {
@@ -37,7 +112,7 @@ export class NetSearchService {
 
       // 调用网络搜索服务
       const searchResponse = await this.webSearchPro(prompt);
-      searchResults = searchResponse.searchResults;
+      searchResults = this.normalizeLegacyResults(prompt, searchResponse.searchResults);
       images = searchResponse.images;
 
       Logger.log(
@@ -45,30 +120,77 @@ export class NetSearchService {
         'NetSearchService',
       );
 
+      const latencyMs = Date.now() - startedAt;
+      const trace: SearchTrace = {
+        query: prompt,
+        latencyMs,
+        sourceCount: searchResults.length,
+        finalCitationUrls: searchResults.map(item => item.url).filter(Boolean),
+        failureReason: searchResults.length === 0 ? 'no_search_results' : undefined,
+      };
+
+      response_items[0] = {
+        ...response_items[0],
+        completedAt: new Date().toISOString(),
+      } as UnifiedResponseItem;
+      response_items.push({
+        type: 'tool_result',
+        tool_name: 'web_search',
+        query: prompt,
+        results: searchResults,
+        latencyMs,
+        sourceCount: searchResults.length,
+      });
+      response_items.push(
+        ...searchResults.map(item => ({
+          type: 'citation' as const,
+          citationId: item.citationId,
+          title: item.title,
+          url: item.url,
+          snippet: item.snippet,
+          publishedAt: item.publishedAt,
+          sourceType: item.sourceType,
+          confidence: item.confidence,
+        })),
+      );
+
       // 更新结果对象
       result.networkSearchResult = JSON.stringify(searchResults);
+      result.response_items = response_items;
+      result.searchTrace = trace;
+      result.tool_calls = JSON.stringify({
+        response_items,
+        searchTrace: trace,
+      });
       onProgress?.({
         networkSearchResult: result.networkSearchResult,
       });
 
       // 存储数据到数据库
       onDatabase?.({
-        networkSearchResult: JSON.stringify(
-          searchResults.map((item: { [x: string]: any; content: any }) => {
-            const { content, ...rest } = item; // 删除 content 部分
-            return rest; // 返回剩余部分
-          }),
-          null,
-          2,
-        ),
+        networkSearchResult: JSON.stringify(searchResults, null, 2),
+        response_items,
+        searchTrace: trace,
       });
 
-      return { searchResults, images };
+      return {
+        searchResults,
+        images,
+        response_items,
+        trace,
+      };
     } catch (error) {
       Logger.error(`[网络搜索] 失败: ${handleError(error)}`, 'NetSearchService');
 
       // 即时存储错误信息
       onDatabase?.({
+        searchTrace: {
+          query: prompt,
+          latencyMs: Date.now() - startedAt,
+          sourceCount: 0,
+          finalCitationUrls: [],
+          failureReason: handleError(error),
+        },
         network_search_error: {
           error: handleError(error),
           query: prompt,
@@ -76,8 +198,123 @@ export class NetSearchService {
         },
       });
 
-      return { searchResults: [], images: [] };
+      return {
+        searchResults: [],
+        images: [],
+        response_items: [],
+        trace: {
+          query: prompt,
+          latencyMs: Date.now() - startedAt,
+          sourceCount: 0,
+          finalCitationUrls: [],
+          failureReason: handleError(error),
+        },
+        error: handleError(error),
+      };
     }
+  }
+
+  mergeResponseItems(
+    legacyResults: UnifiedSearchResult[],
+    hostedResponseItems: any[] = [],
+    query = '',
+    latencyMs = 0,
+  ): UnifiedResponseItem[] {
+    const hostedResults = this.normalizeHostedResponseItems(query, hostedResponseItems);
+    const results = this.dedupeResults([...legacyResults, ...hostedResults]);
+
+    return [
+      {
+        type: 'tool_call',
+        tool_name: 'web_search',
+        query,
+        startedAt: new Date(Date.now() - latencyMs).toISOString(),
+        completedAt: new Date().toISOString(),
+      },
+      {
+        type: 'tool_result',
+        tool_name: 'web_search',
+        query,
+        results,
+        latencyMs,
+        sourceCount: results.length,
+      },
+      ...results.map(item => ({
+        type: 'citation' as const,
+        citationId: item.citationId,
+        title: item.title,
+        url: item.url,
+        snippet: item.snippet,
+        publishedAt: item.publishedAt,
+        sourceType: item.sourceType,
+        confidence: item.confidence,
+      })),
+    ];
+  }
+
+  normalizeLegacyResults(query: string, results: any[] = []): UnifiedSearchResult[] {
+    return this.dedupeResults(
+      results.map((item, index) => ({
+        query,
+        title: item?.title || '',
+        url: item?.url || item?.link || '',
+        snippet: item?.snippet || item?.content || '',
+        publishedAt: item?.publishedAt || item?.published_at || item?.date || null,
+        sourceType: 'legacy_net_search' as const,
+        confidence: typeof item?.score === 'number' ? Math.max(0, Math.min(1, item.score)) : 0.7,
+        citationId: item?.citationId || String(item?.resultIndex || index + 1),
+        resultIndex: item?.resultIndex || index + 1,
+        icon: item?.icon || '',
+        media: item?.media || '',
+      })),
+    );
+  }
+
+  normalizeHostedResponseItems(query: string, responseItems: any[] = []): UnifiedSearchResult[] {
+    const results: UnifiedSearchResult[] = [];
+
+    responseItems.forEach((item, index) => {
+      const candidates = item?.results || item?.content || item?.annotations || [];
+      const list = Array.isArray(candidates) ? candidates : [candidates];
+
+      list.forEach((candidate, candidateIndex) => {
+        const url =
+          candidate?.url || candidate?.link || candidate?.web_url || candidate?.source?.url;
+        if (!url) {
+          return;
+        }
+
+        const resultIndex = results.length + 1;
+        results.push({
+          query,
+          title: candidate?.title || candidate?.source?.title || url,
+          url,
+          snippet: candidate?.snippet || candidate?.text || candidate?.content || '',
+          publishedAt: candidate?.publishedAt || candidate?.published_at || null,
+          sourceType: 'responses_hosted_web_search',
+          confidence:
+            typeof candidate?.confidence === 'number'
+              ? Math.max(0, Math.min(1, candidate.confidence))
+              : 0.8,
+          citationId: candidate?.citationId || `h${index + 1}-${candidateIndex + 1}`,
+          resultIndex,
+        });
+      });
+    });
+
+    return this.dedupeResults(results);
+  }
+
+  private dedupeResults(results: UnifiedSearchResult[]) {
+    const seen = new Set<string>();
+    return results.filter(item => {
+      const key = item.url || `${item.title}:${item.snippet}`;
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
   }
 
   async webSearchPro(prompt: string) {
