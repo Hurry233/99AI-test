@@ -3146,6 +3146,11 @@ let ChatLogEntity = class ChatLogEntity extends baseEntity_1.BaseEntity {
     promptReference;
     networkSearchResult;
     fileVectorResult;
+    runId;
+    responseItems;
+    artifacts;
+    traceStatus;
+    toolSummary;
 };
 exports.ChatLogEntity = ChatLogEntity;
 __decorate([
@@ -3300,6 +3305,26 @@ __decorate([
     (0, typeorm_1.Column)({ comment: '文件向量搜索结果', nullable: true, type: 'mediumtext' }),
     __metadata("design:type", String)
 ], ChatLogEntity.prototype, "fileVectorResult", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ comment: 'Agent运行ID', nullable: true }),
+    __metadata("design:type", String)
+], ChatLogEntity.prototype, "runId", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ comment: '统一响应项', nullable: true, type: 'mediumtext' }),
+    __metadata("design:type", String)
+], ChatLogEntity.prototype, "responseItems", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ comment: 'Agent产物', nullable: true, type: 'mediumtext' }),
+    __metadata("design:type", String)
+], ChatLogEntity.prototype, "artifacts", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ comment: 'Agent轨迹状态', nullable: true }),
+    __metadata("design:type", String)
+], ChatLogEntity.prototype, "traceStatus", void 0);
+__decorate([
+    (0, typeorm_1.Column)({ comment: '工具调用摘要', nullable: true, type: 'text' }),
+    __metadata("design:type", String)
+], ChatLogEntity.prototype, "toolSummary", void 0);
 exports.ChatLogEntity = ChatLogEntity = __decorate([
     (0, typeorm_1.Entity)({ name: 'chatlog' })
 ], ChatLogEntity);
@@ -11007,6 +11032,74 @@ const chatGroup_entity_1 = __webpack_require__(82);
 const user_entity_1 = __webpack_require__(83);
 const chatLog_entity_1 = __webpack_require__(75);
 const models_service_1 = __webpack_require__(76);
+
+function parseAgentJson(value, fallback) {
+    if (!value)
+        return fallback;
+    if (typeof value !== 'string')
+        return value;
+    try {
+        return JSON.parse(value);
+    }
+    catch (_) {
+        return fallback;
+    }
+}
+function normalizeUrlAttachments(value, type) {
+    const parsed = parseAgentJson(value, value);
+    const values = Array.isArray(parsed)
+        ? parsed
+        : parsed?.imageUrls
+            ? parsed.imageUrls
+            : typeof parsed === 'string'
+                ? parsed.split(',').map(url => url.trim()).filter(Boolean)
+                : [];
+    return values.map((entry, index) => {
+        const url = typeof entry === 'string' ? entry : entry?.url;
+        if (!url)
+            return null;
+        return { id: entry?.id || `${type}-${index}`, type, name: entry?.name, url, mimeType: entry?.type || entry?.mimeType, source: 'legacy' };
+    }).filter(Boolean);
+}
+function buildAgentResponseItems(chatLog) {
+    const existing = parseAgentJson(chatLog.responseItems, []);
+    if (Array.isArray(existing) && existing.length)
+        return existing;
+    const items = [];
+    const attachments = [
+        ...normalizeUrlAttachments(chatLog.imageUrl || chatLog.fileInfo || '', 'image'),
+        ...normalizeUrlAttachments(chatLog.fileUrl || '', 'file'),
+        ...normalizeUrlAttachments(chatLog.audioUrl || '', 'audio'),
+        ...normalizeUrlAttachments(chatLog.videoUrl || '', 'video'),
+    ];
+    const text = chatLog.content || (chatLog.role === 'assistant' ? chatLog.answer : chatLog.prompt) || '';
+    if (text)
+        items.push({ id: `message-${chatLog.id}`, type: 'message', role: chatLog.role || 'assistant', text, attachments: attachments.length ? attachments : undefined });
+    if (chatLog.reasoning_content)
+        items.push({ id: `reasoning-${chatLog.id}`, type: 'reasoning', text: chatLog.reasoning_content });
+    if (chatLog.networkSearchResult)
+        items.push({ id: `network-search-${chatLog.id}`, type: 'tool_result', name: 'network_search', status: 'completed', output: parseAgentJson(chatLog.networkSearchResult, chatLog.networkSearchResult) });
+    if (chatLog.fileVectorResult)
+        items.push({ id: `file-vector-${chatLog.id}`, type: 'tool_result', name: 'file_vector_search', status: 'completed', output: parseAgentJson(chatLog.fileVectorResult, chatLog.fileVectorResult) });
+    if (chatLog.tool_calls) {
+        const calls = parseAgentJson(chatLog.tool_calls, []);
+        (Array.isArray(calls) ? calls : [chatLog.tool_calls]).filter(Boolean).forEach((call, index) => items.push({ id: call?.id || `tool-call-${chatLog.id}-${index}`, type: 'tool_call', name: call?.function?.name || call?.name || 'tool_call', status: 'completed', arguments: call?.function?.arguments || call?.arguments || call }));
+    }
+    attachments.forEach((attachment, index) => items.push({ id: `artifact-${chatLog.id}-${index}`, type: 'artifact', artifact: { id: attachment.id, type: attachment.type === 'link' ? 'file' : attachment.type, title: attachment.name, url: attachment.url, attachments: [attachment] } }));
+    return items;
+}
+function buildAgentArtifacts(chatLog, responseItems) {
+    const artifacts = parseAgentJson(chatLog.artifacts, []);
+    const result = Array.isArray(artifacts) ? artifacts : [];
+    responseItems.forEach(item => {
+        if (item.type === 'artifact' && item.artifact)
+            result.push(item.artifact);
+    });
+    return result;
+}
+function buildToolSummary(responseItems) {
+    return [...new Set(responseItems.filter(item => item.type === 'tool_call' || item.type === 'tool_result').map(item => item.name).filter(Boolean))].join('、');
+}
 let ChatLogService = class ChatLogService {
     chatLogEntity;
     userEntity;
@@ -11164,7 +11257,9 @@ let ChatLogService = class ChatLogService {
         }
         const list = await this.chatLogEntity.find({ where });
         return list.map(item => {
-            const { prompt, role, answer, createdAt, model, modelName, type, status, action, drawId, id, imageUrl, fileInfo, fileUrl, ttsUrl, videoUrl, audioUrl, customId, pluginParam, progress, modelAvatar, taskData, promptReference, networkSearchResult, fileVectorResult, taskId, reasoning_content, tool_calls, content, } = item;
+            const { prompt, role, answer, createdAt, model, modelName, type, status, action, drawId, id, imageUrl, fileInfo, fileUrl, ttsUrl, videoUrl, audioUrl, customId, pluginParam, progress, modelAvatar, taskData, promptReference, networkSearchResult, fileVectorResult, taskId, reasoning_content, tool_calls, content, runId, responseItems, artifacts, traceStatus, toolSummary, } = item;
+            const normalizedResponseItems = buildAgentResponseItems(item);
+            const normalizedArtifacts = buildAgentArtifacts(item, normalizedResponseItems);
             return {
                 chatId: id,
                 dateTime: (0, utils_1.formatDate)(createdAt),
@@ -11192,6 +11287,11 @@ let ChatLogService = class ChatLogService {
                 promptReference: promptReference,
                 networkSearchResult: networkSearchResult,
                 fileVectorResult: fileVectorResult,
+                runId: runId || `run-${id}`,
+                responseItems: responseItems || JSON.stringify(normalizedResponseItems),
+                artifacts: artifacts || JSON.stringify(normalizedArtifacts),
+                traceStatus: traceStatus || (status === 4 ? 'failed' : 'completed'),
+                toolSummary: toolSummary || buildToolSummary(normalizedResponseItems),
                 taskId: taskId,
             };
         });
@@ -11210,7 +11310,9 @@ let ChatLogService = class ChatLogService {
         });
         const result = list
             .map(item => {
-            const { role, content, answer, prompt, imageUrl, fileInfo, fileUrl, ttsUrl, videoUrl, audioUrl, reasoning_content, tool_calls, progress, } = item;
+            const { role, content, answer, prompt, imageUrl, fileInfo, fileUrl, ttsUrl, videoUrl, audioUrl, reasoning_content, tool_calls, progress, runId, responseItems, artifacts, traceStatus, toolSummary, } = item;
+            const normalizedResponseItems = buildAgentResponseItems(item);
+            const normalizedArtifacts = buildAgentArtifacts(item, normalizedResponseItems);
             const record = {
                 role: role,
                 content: content || (role === 'assistant' ? answer : prompt),
@@ -11222,6 +11324,11 @@ let ChatLogService = class ChatLogService {
                 reasoningText: reasoning_content,
                 tool_calls: tool_calls,
                 progress,
+                runId: runId || `run-${item.id}`,
+                responseItems: responseItems || JSON.stringify(normalizedResponseItems),
+                artifacts: artifacts || JSON.stringify(normalizedArtifacts),
+                traceStatus: traceStatus || 'completed',
+                toolSummary: toolSummary || buildToolSummary(normalizedResponseItems),
             };
             return record;
         })
@@ -11361,6 +11468,11 @@ let ChatLogService = class ChatLogService {
                 fileVectorResult: chatLog.fileVectorResult || '',
                 pluginParam: chatLog.pluginParam || '',
                 modelAvatar: chatLog.modelAvatar || '',
+                runId: chatLog.runId || `run-${chatLog.id}`,
+                responseItems: chatLog.responseItems || JSON.stringify(buildAgentResponseItems(chatLog)),
+                artifacts: chatLog.artifacts || JSON.stringify(buildAgentArtifacts(chatLog, buildAgentResponseItems(chatLog))),
+                traceStatus: chatLog.traceStatus || (chatLog.status === 4 ? 'failed' : 'completed'),
+                toolSummary: chatLog.toolSummary || buildToolSummary(buildAgentResponseItems(chatLog)),
             };
             return formattedResult;
         }
@@ -12388,23 +12500,48 @@ let ChatService = class ChatService {
                         usingMcpTool: usingMcpTool,
                         isMcpTool: isMcpTool,
                         onProgress: chat => {
-                            res.write(`\n${JSON.stringify(chat)}`);
+                            const responseItems = buildAgentResponseItems({
+                                id: assistantLogId,
+                                role: 'assistant',
+                                content: chat.content?.[0]?.text || '',
+                                reasoning_content: chat.reasoning_content?.[0]?.text || '',
+                                networkSearchResult: chat.networkSearchResult || '',
+                                fileVectorResult: chat.fileVectorResult || '',
+                                tool_calls: chat.tool_calls || '',
+                                imageUrl,
+                                fileUrl,
+                            });
+                            res.write(`\n${JSON.stringify({
+                                ...chat,
+                                runId: `run-${assistantLogId}`,
+                                responseItems: JSON.stringify(responseItems),
+                                artifacts: JSON.stringify(buildAgentArtifacts({ id: assistantLogId, imageUrl, fileUrl }, responseItems)),
+                                traceStatus: 'running',
+                                toolSummary: buildToolSummary(responseItems),
+                            })}`);
                         },
                         onFailure: async (data) => {
                             await this.chatLogService.updateChatLog(assistantLogId, {
                                 content: data.errMsg,
                                 status: 4,
+                                traceStatus: 'failed',
                             });
                         },
                         onDatabase: async (data) => {
                             if (data.networkSearchResult) {
                                 await this.chatLogService.updateChatLog(assistantLogId, {
                                     networkSearchResult: data.networkSearchResult,
+                                    responseItems: JSON.stringify(buildAgentResponseItems({ id: assistantLogId, role: 'assistant', networkSearchResult: data.networkSearchResult, imageUrl, fileUrl })),
+                                    runId: `run-${assistantLogId}`,
+                                    traceStatus: 'running',
                                 });
                             }
                             if (data.fileVectorResult) {
                                 await this.chatLogService.updateChatLog(assistantLogId, {
                                     fileVectorResult: data.fileVectorResult,
+                                    responseItems: JSON.stringify(buildAgentResponseItems({ id: assistantLogId, role: 'assistant', fileVectorResult: data.fileVectorResult, imageUrl, fileUrl })),
+                                    runId: `run-${assistantLogId}`,
+                                    traceStatus: 'running',
                                 });
                             }
                         },
@@ -12435,6 +12572,17 @@ let ChatService = class ChatService {
                             common_1.Logger.debug(`检测到敏感词，已进行屏蔽处理`, 'ChatService');
                         }
                     }
+                    const finalResponseItems = buildAgentResponseItems({
+                        id: assistantLogId,
+                        role: 'assistant',
+                        content: sanitizedAnswer,
+                        reasoning_content: response.full_reasoning_content,
+                        networkSearchResult: response.networkSearchResult,
+                        fileVectorResult: response.fileVectorResult,
+                        tool_calls: response.tool_calls,
+                        imageUrl,
+                        fileUrl,
+                    });
                     await this.chatLogService.updateChatLog(assistantLogId, {
                         content: sanitizedAnswer,
                         reasoning_content: response.full_reasoning_content,
@@ -12442,6 +12590,11 @@ let ChatService = class ChatService {
                         promptTokens: promptTokens,
                         completionTokens: completionTokens,
                         totalTokens: promptTokens + completionTokens,
+                        runId: `run-${assistantLogId}`,
+                        responseItems: JSON.stringify(finalResponseItems),
+                        artifacts: JSON.stringify(buildAgentArtifacts({ id: assistantLogId, imageUrl, fileUrl }, finalResponseItems)),
+                        traceStatus: 'completed',
+                        toolSummary: buildToolSummary(finalResponseItems),
                         status: 3,
                     });
                     try {
@@ -19975,7 +20128,7 @@ async function runAllMigrations() {
         catch (error) {
             common_1.Logger.log(`迁移app表catId列时跳过: ${error.message}`, 'Database');
         }
-        const chatlogColumns = ['content', 'fileVectorResult'];
+        const chatlogColumns = ['content', 'fileVectorResult', 'responseItems', 'artifacts'];
         for (const column of chatlogColumns) {
             try {
                 await migrateColumnType('chatlog', column, 'MEDIUMTEXT', conn);

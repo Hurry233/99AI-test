@@ -1,0 +1,6 @@
+{
+  "normal": "chat/src/fixtures/agent-response-items.json#normal",
+  "network": "chat/src/fixtures/agent-response-items.json#network",
+  "image": "chat/src/fixtures/agent-response-items.json#image",
+  "file": "chat/src/fixtures/agent-response-items.json#file"
+}

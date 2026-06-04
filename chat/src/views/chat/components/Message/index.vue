@@ -38,6 +38,12 @@ interface Props {
   networkSearchResult?: string
   fileVectorResult?: string
   tool_calls?: string
+  responseItems?: any[] | string
+  artifacts?: any[] | string
+  attachments?: any[] | string
+  runId?: string
+  traceStatus?: string
+  toolSummary?: string
   isLast?: boolean
   usingNetwork?: boolean
   usingDeepThinking?: boolean
@@ -162,6 +168,12 @@ function handleRegenerate() {
           :networkSearchResult="networkSearchResult"
           :fileVectorResult="fileVectorResult"
           :tool_calls="tool_calls"
+          :responseItems="responseItems"
+          :artifacts="artifacts"
+          :attachments="attachments"
+          :runId="runId"
+          :traceStatus="traceStatus"
+          :toolSummary="toolSummary"
           :isLast="isLast"
           :usingNetwork="usingNetwork"
           :usingDeepThinking="usingDeepThinking"

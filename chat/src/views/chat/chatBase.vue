@@ -7,6 +7,14 @@ import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
 import { useAuthStore, useChatStore, useGlobalStoreWithOut } from '@/store'
 import { dialog } from '@/utils/dialog'
+import {
+  artifactsFromResponseItems,
+  normalizeResponseItems,
+  responseItemsFromLegacy,
+  serializeResponseItems,
+  summarizeTools,
+  type ResponseItem,
+} from '@/utils/agentResponse'
 import { message } from '@/utils/message'
 import { Close, DropDownList } from '@icon-park/vue-next'
 import DownSmall from '@icon-park/vue-next/es/icons/DownSmall'
@@ -526,7 +534,11 @@ const onConversation = async ({
     let full_json = ''
     let fileVectorResult = ''
     let responseMeta = ''
-    let responseItems: any[] = []
+    let runId = ''
+    let traceStatus = 'running'
+    let responseItems: ResponseItem[] = []
+    let artifacts: any[] = []
+    let toolSummary = ''
     // 工作流相关变量
     let nodeType = ''
     let stepName = ''
@@ -591,6 +603,45 @@ const onConversation = async ({
         verySmall: baseBufferThresholds.verySmall, // 最小阈值保持不变
       }
     }
+
+    const mergeResponseItems = (incoming: unknown) => {
+      const normalized = normalizeResponseItems(incoming as any)
+      if (!normalized.length) return
+      responseItems = [...responseItems, ...normalized]
+      artifacts = artifactsFromResponseItems(responseItems, {
+        imageUrl: data?.imageUrl,
+        fileUrl: fileUrl || activeFileUrl.value || '',
+      })
+      toolSummary = summarizeTools(responseItems)
+    }
+
+    const ensureResponseItemsFromCurrentState = () => {
+      const fallbackItems = responseItemsFromLegacy({
+        chatId: Number(assistantLogId),
+        role: 'assistant',
+        content: fullText || displayedText,
+        reasoningText: fullReasoningText || displayedReasoningText,
+        networkSearchResult,
+        fileVectorResult,
+        tool_calls,
+        imageUrl: data?.imageUrl,
+        fileUrl: fileUrl || activeFileUrl.value || '',
+      })
+      responseItems = responseItems.length ? responseItems : fallbackItems
+      artifacts = artifactsFromResponseItems(responseItems, {
+        imageUrl: data?.imageUrl,
+        fileUrl: fileUrl || activeFileUrl.value || '',
+      })
+      toolSummary = summarizeTools(responseItems)
+    }
+
+    const currentAgentFields = () => ({
+      runId: runId || (assistantLogId ? `run-${assistantLogId}` : ''),
+      responseItems: serializeResponseItems(responseItems),
+      artifacts: JSON.stringify(artifacts),
+      traceStatus,
+      toolSummary,
+    })
 
     // 启动显示定时器
     const startDisplayTimer = () => {
@@ -768,6 +819,7 @@ const onConversation = async ({
         loading: true,
         imageUrl: data?.imageUrl,
         promptReference: promptReference,
+        ...currentAgentFields(),
         nodeType: nodeType,
         stepName: stepName,
         workflowProgress: workflowProgress,
@@ -825,6 +877,14 @@ const onConversation = async ({
               try {
                 const jsonObj = JSON.parse(line)
 
+                mergeResponseItems(jsonObj.responseItems || jsonObj.response_items)
+                if (jsonObj.artifacts) artifacts = jsonObj.artifacts
+                if (jsonObj.runId || jsonObj.run_id) runId = jsonObj.runId || jsonObj.run_id
+                if (jsonObj.traceStatus || jsonObj.trace_status)
+                  traceStatus = jsonObj.traceStatus || jsonObj.trace_status
+                if (jsonObj.toolSummary || jsonObj.tool_summary)
+                  toolSummary = jsonObj.toolSummary || jsonObj.tool_summary
+
                 // 处理用户余额
                 if (jsonObj.userBalance) authStore.updateUserBalance(jsonObj.userBalance)
 
@@ -866,6 +926,7 @@ const onConversation = async ({
                       loading: true,
                       imageUrl: data?.imageUrl,
                       promptReference: promptReference,
+                      ...currentAgentFields(),
                       nodeType: nodeType,
                       stepName: stepName,
                       workflowProgress: workflowProgress,
@@ -945,6 +1006,7 @@ const onConversation = async ({
                       loading: true,
                       imageUrl: data?.imageUrl,
                       promptReference: promptReference,
+                      ...currentAgentFields(),
                       nodeType: nodeType,
                       stepName: stepName,
                       workflowProgress: workflowProgress,
@@ -967,6 +1029,7 @@ const onConversation = async ({
                 if (jsonObj.networkSearchResult) networkSearchResult = jsonObj.networkSearchResult
                 if (jsonObj.fileVectorResult) fileVectorResult = jsonObj.fileVectorResult
                 if (jsonObj.tool_calls) tool_calls = jsonObj.tool_calls
+                ensureResponseItemsFromCurrentState()
                 if (jsonObj.promptReference) promptReference = jsonObj.promptReference
                 if (jsonObj.chatId) {
                   assistantLogId = jsonObj.chatId
@@ -1015,6 +1078,9 @@ const onConversation = async ({
         })
       }
 
+      traceStatus = finishReason === 'stop' ? 'completed' : traceStatus
+      ensureResponseItemsFromCurrentState()
+
       // 确保显示完整文本
       displayedText = fullText
       displayedReasoningText = fullReasoningText
@@ -1035,6 +1101,7 @@ const onConversation = async ({
         loading: true,
         imageUrl: data?.imageUrl,
         promptReference: promptReference,
+        ...currentAgentFields(),
         nodeType: nodeType,
         stepName: stepName,
         workflowProgress: workflowProgress,
@@ -1434,6 +1501,12 @@ provide('tryParseJson', tryParseJson)
                     :usingDeepThinking="false"
                     :useFileSearch="item.useFileSearch"
                     :tool_calls="item.tool_calls"
+                    :responseItems="item.responseItems"
+                    :artifacts="item.artifacts"
+                    :attachments="item.attachments"
+                    :runId="item.runId"
+                    :traceStatus="item.traceStatus"
+                    :toolSummary="item.toolSummary"
                     @delete="handleDelete(item)"
                   />
                   <div class="sticky bottom-2 flex justify-center p-1 z-20">

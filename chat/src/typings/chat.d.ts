@@ -29,6 +29,12 @@ declare namespace Chat {
     promptReference?: string
     networkSearchResult?: string
     fileVectorResult?: string
+    runId?: string
+    responseItems?: any[] | string
+    artifacts?: any[] | string
+    attachments?: any[] | string
+    traceStatus?: string
+    toolSummary?: string
     usingNetwork?: boolean
     usingDeepThinking?: boolean
     usingMcpTool?: boolean

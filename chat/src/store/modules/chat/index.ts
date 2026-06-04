@@ -290,7 +290,15 @@ export const useChatStore = defineStore('chat-store', {
 
         // 检查响应数据并更新 chatList
         if (res && res.data) {
-          this.chatList = res.data
+          this.chatList = res.data.map((chat: any) => ({
+            ...chat,
+            responseItems: chat.responseItems || chat.response_items || '',
+            artifacts: chat.artifacts || '',
+            attachments: chat.attachments || '',
+            traceStatus: chat.traceStatus || chat.trace_status || '',
+            toolSummary: chat.toolSummary || chat.tool_summary || '',
+            runId: chat.runId || chat.run_id || '',
+          }))
         } else {
           this.chatList = [] // 如果没有数据，确保 chatList 为空数组
         }
