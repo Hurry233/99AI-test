@@ -526,6 +526,7 @@ const onConversation = async ({
     let full_json = ''
     let fileVectorResult = ''
     let responseMeta = ''
+    let responseItems: any[] = []
     // 工作流相关变量
     let nodeType = ''
     let stepName = ''
@@ -756,6 +757,7 @@ const onConversation = async ({
         content: displayedText,
         reasoningText: displayedReasoningText,
         responseMeta: responseMeta,
+        responseItems: JSON.stringify(responseItems),
         mcpToolUse: mcpToolUse,
         networkSearchResult: networkSearchResult,
         fileVectorResult: fileVectorResult,
@@ -853,6 +855,7 @@ const onConversation = async ({
                       content: displayedText,
                       reasoningText: displayedReasoningText,
                       responseMeta: responseMeta,
+                      responseItems: JSON.stringify(responseItems),
                       mcpToolUse: mcpToolUse,
                       networkSearchResult: networkSearchResult,
                       fileVectorResult: fileVectorResult,
@@ -882,6 +885,12 @@ const onConversation = async ({
 
                 // 处理其他属性
                 if (jsonObj.fileVectorResult) fileVectorResult = jsonObj.fileVectorResult
+                if (jsonObj.response_items) {
+                  const incomingItems = Array.isArray(jsonObj.response_items)
+                    ? jsonObj.response_items
+                    : [jsonObj.response_items]
+                  responseItems = responseItems.concat(incomingItems)
+                }
                 if (jsonObj.response_meta) {
                   responseMeta = JSON.stringify(jsonObj.response_meta)
                   updateGroupChat(dataSources.value.length - 1, {
@@ -889,6 +898,7 @@ const onConversation = async ({
                     content: displayedText,
                     reasoningText: displayedReasoningText,
                     responseMeta: responseMeta,
+                    responseItems: JSON.stringify(responseItems),
                     mcpToolUse: mcpToolUse,
                     networkSearchResult: networkSearchResult,
                     fileVectorResult: fileVectorResult,
@@ -924,6 +934,7 @@ const onConversation = async ({
                       content: displayedText,
                       reasoningText: displayedReasoningText,
                       responseMeta: responseMeta,
+                      responseItems: JSON.stringify(responseItems),
                       mcpToolUse: mcpToolUse,
                       networkSearchResult: networkSearchResult,
                       fileVectorResult: fileVectorResult,
@@ -1013,6 +1024,7 @@ const onConversation = async ({
         content: displayedText,
         reasoningText: displayedReasoningText,
         responseMeta: responseMeta,
+        responseItems: JSON.stringify(responseItems),
         mcpToolUse: mcpToolUse,
         networkSearchResult: networkSearchResult,
         fileVectorResult: fileVectorResult,
@@ -1395,6 +1407,7 @@ provide('tryParseJson', tryParseJson)
                     :content="item.content"
                     :reasoningText="item.reasoningText"
                     :responseMeta="item.responseMeta"
+                    :responseItems="item.responseItems"
                     :model="item.model"
                     :modelType="item.modelType"
                     :modelName="item.modelName"

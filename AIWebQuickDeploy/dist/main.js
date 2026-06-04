@@ -9844,6 +9844,7 @@ let OpenAIChatService = class OpenAIChatService {
             networkSearchResult: '',
             fileVectorResult: '',
             response_meta: null,
+            response_items: [],
             finishReason: null,
         };
         try {
@@ -10244,6 +10245,18 @@ let OpenAIChatService = class OpenAIChatService {
             .map(content => content?.text || '')
             .join('');
     }
+    emitResponseItem(result, onProgress, item) {
+        const normalizedItem = {
+            id: item.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            createdAt: item.createdAt || new Date().toISOString(),
+            ...item,
+        };
+        result.response_items = [...(result.response_items || []), normalizedItem];
+        onProgress?.({
+            response_items: [normalizedItem],
+        });
+        return normalizedItem;
+    }
     emitResponseMeta(result, onProgress, patch) {
         result.response_meta = {
             ...(result.response_meta || {}),
@@ -10268,6 +10281,44 @@ let OpenAIChatService = class OpenAIChatService {
             elapsedMs: 0,
             attachmentSummary: responseContext.attachmentSummary,
         });
+        this.emitResponseItem(result, onProgress, {
+            type: 'run_status',
+            status: 'planning',
+            title: '正在规划回答',
+            scenario,
+            data: {
+                model,
+                apiFormat: 'responses',
+            },
+        });
+        if (responseContext.usingNetwork) {
+            this.emitResponseItem(result, onProgress, {
+                type: 'tool_call',
+                toolName: 'web_search',
+                status: 'running',
+                title: '正在检索实时信息',
+            });
+        }
+        if (responseContext.hasDocuments) {
+            this.emitResponseItem(result, onProgress, {
+                type: 'tool_call',
+                toolName: 'file_reader',
+                status: 'running',
+                title: '正在读取附件',
+                data: {
+                    files: responseContext.files || [],
+                    attachmentSummary: responseContext.attachmentSummary,
+                },
+            });
+        }
+        if (scenario === 'image_generation' || scenario === 'image_edit') {
+            this.emitResponseItem(result, onProgress, {
+                type: 'tool_call',
+                toolName: scenario === 'image_edit' ? 'image_edit' : 'image_generation',
+                status: 'running',
+                title: scenario === 'image_edit' ? '正在修改图片' : '正在生成图片',
+            });
+        }
         common_1.Logger.debug(`Responses请求 - Input: ${JSON.stringify(messagesHistory)}`, 'OpenAIChatService');
         const stream = await openai.responses.create(this.buildResponsesRequest(model, messagesHistory, {
             stream: true,
@@ -10283,16 +10334,31 @@ let OpenAIChatService = class OpenAIChatService {
                     status: 'cancelled',
                     elapsedMs: Date.now() - startedAt,
                 });
+                this.emitResponseItem(result, onProgress, {
+                    type: 'run_status',
+                    status: 'cancelled',
+                    title: '运行已取消',
+                });
                 break;
             }
             if (event.type === 'response.created' || event.type === 'response.in_progress') {
+                const responseStatus = event.response?.status || (event.type === 'response.created' ? 'created' : 'in_progress');
+                const responseId = event.response?.id || result.response_meta?.responseId;
                 this.emitResponseMeta(result, onProgress, {
-                    status: event.response?.status || (event.type === 'response.created' ? 'created' : 'in_progress'),
-                    responseId: event.response?.id || result.response_meta?.responseId,
+                    status: responseStatus,
+                    responseId,
                     model: event.response?.model || model,
                     createdAt: event.response?.created_at || result.response_meta?.createdAt,
                     elapsedMs: Date.now() - startedAt,
                 });
+                if (event.type === 'response.created') {
+                    this.emitResponseItem(result, onProgress, {
+                        type: 'run_status',
+                        status: 'created',
+                        title: '已创建 Responses 运行',
+                        responseId,
+                    });
+                }
             }
             else if (event.type === 'response.output_text.delta' || event.type === 'response.refusal.delta') {
                 const content = event.delta || '';
@@ -10330,6 +10396,19 @@ let OpenAIChatService = class OpenAIChatService {
                 const imageResults = outputItems.filter(item => item?.type === 'image_generation_call' && item?.result).map(item => item.result);
                 if (imageResults.length > 0) {
                     const markdownImages = imageResults.map((image, index) => `\n\n![生成图片 ${index + 1}](data:image/png;base64,${image})`).join('');
+                    imageResults.forEach((image, index) => {
+                        this.emitResponseItem(result, onProgress, {
+                            type: 'artifact',
+                            artifactType: 'image',
+                            status: 'completed',
+                            title: `生成图片 ${index + 1}`,
+                            data: {
+                                mimeType: 'image/png',
+                                b64: image,
+                                src: `data:image/png;base64,${image}`,
+                            },
+                        });
+                    });
                     result.content = [
                         {
                             type: 'text',
@@ -10341,6 +10420,16 @@ let OpenAIChatService = class OpenAIChatService {
                         content: result.content,
                     });
                 }
+                this.emitResponseItem(result, onProgress, {
+                    type: 'run_status',
+                    status: 'completed',
+                    title: '运行完成',
+                    scenario,
+                    data: {
+                        outputTypes: outputItems.map(item => item?.type).filter(Boolean),
+                        generatedImageCount: imageResults.length,
+                    },
+                });
                 this.emitResponseMeta(result, onProgress, {
                     status: event.response?.status || 'completed',
                     responseId: event.response?.id || result.response_meta?.responseId,
@@ -10358,13 +10447,30 @@ let OpenAIChatService = class OpenAIChatService {
                     hasPartialImage: Boolean(event.partial_image_b64 || event.b64_json),
                     elapsedMs: Date.now() - startedAt,
                 });
+                this.emitResponseItem(result, onProgress, {
+                    type: 'tool_result',
+                    toolName: 'image_generation',
+                    status: 'running',
+                    title: '收到图片生成预览',
+                    data: {
+                        partialImageIndex: event.partial_image_index,
+                        hasPartialImage: Boolean(event.partial_image_b64 || event.b64_json),
+                    },
+                });
             }
             else if (event.type === 'response.failed' || event.type === 'response.error' || event.type === 'error') {
+                const errorMessage = event.error?.message || event.response?.error?.message || 'Responses API请求失败';
                 this.emitResponseMeta(result, onProgress, {
                     status: 'failed',
                     elapsedMs: Date.now() - startedAt,
                 });
-                throw new Error(event.error?.message || event.response?.error?.message || 'Responses API请求失败');
+                this.emitResponseItem(result, onProgress, {
+                    type: 'run_status',
+                    status: 'failed',
+                    title: '运行失败，已降级返回错误',
+                    error: errorMessage,
+                });
+                throw new Error(errorMessage);
             }
         }
     }

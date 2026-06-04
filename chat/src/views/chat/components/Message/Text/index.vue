@@ -98,6 +98,7 @@ interface Props {
   usingMcpTool?: boolean
   reasoningText?: string
   responseMeta?: string
+  responseItems?: string
   fileAnalysisProgress?: number
   useFileSearch?: boolean
 }
@@ -520,6 +521,34 @@ const responseMeta = computed(() => {
     return null
   }
 })
+
+const responseItems = computed<any[]>(() => {
+  if (!props.responseItems) return []
+  try {
+    const parsed = JSON.parse(props.responseItems)
+    return Array.isArray(parsed) ? parsed.slice(-8) : []
+  } catch {
+    return []
+  }
+})
+
+const responseProcessItems = computed(() =>
+  responseItems.value.filter(item =>
+    ['run_status', 'tool_call', 'tool_result', 'artifact'].includes(item.type)
+  )
+)
+
+const responseItemLabel = (item: any) => {
+  const toolLabels: Record<string, string> = {
+    web_search: '搜索',
+    file_reader: '文件',
+    image_generation: '绘图',
+    image_edit: '修图',
+  }
+  if (item.toolName) return toolLabels[item.toolName] || item.toolName
+  if (item.type === 'artifact') return item.artifactType === 'image' ? '图片' : '产物'
+  return item.status === 'completed' ? '完成' : item.status === 'failed' ? '失败' : '运行'
+}
 
 const isResponsesMode = computed(() => responseMeta.value?.apiFormat === 'responses')
 
@@ -1060,6 +1089,39 @@ function openSingleImagePreview(src: string) {
           </div>
         </div>
       </transition>
+    </div>
+
+    <!-- Agent 运行过程 -->
+    <div
+      v-if="!isUserMessage && responseProcessItems.length"
+      class="mb-2 rounded-2xl border border-gray-200 bg-white/70 p-3 text-sm text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-300"
+    >
+      <div class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+        <span>执行过程</span>
+        <span>{{ responseProcessItems.length }} 步</span>
+      </div>
+      <div class="flex flex-col gap-2">
+        <div
+          v-for="item in responseProcessItems"
+          :key="item.id"
+          class="flex items-start gap-2 rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/40"
+        >
+          <span
+            class="mt-0.5 min-w-[2.5rem] rounded-full bg-gray-200 px-2 py-0.5 text-center text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+          >
+            {{ responseItemLabel(item) }}
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-gray-700 dark:text-gray-200">
+              {{ item.title || item.status || item.type }}
+            </div>
+            <div v-if="item.error" class="mt-1 text-xs text-red-500">
+              {{ item.error }}
+            </div>
+          </div>
+          <span class="text-xs text-gray-400">{{ item.status }}</span>
+        </div>
+      </div>
     </div>
 
     <!-- 深度思考内容 -->
