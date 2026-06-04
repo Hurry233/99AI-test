@@ -34,6 +34,8 @@ declare namespace Chat {
     usingMcpTool?: boolean
     mcpToolUse?: string
     reasoningText?: string
+    responseMeta?: string
+    responseItems?: string
     reasoning_content?: string
     tool_calls?: string
     progress?: string

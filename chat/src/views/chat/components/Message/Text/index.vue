@@ -97,6 +97,8 @@ interface Props {
   usingDeepThinking?: boolean
   usingMcpTool?: boolean
   reasoningText?: string
+  responseMeta?: string
+  responseItems?: string
   fileAnalysisProgress?: number
   useFileSearch?: boolean
 }
@@ -509,6 +511,101 @@ const reasoningText = computed<string>(() => {
   }
 
   return modifiedValue
+})
+
+const responseMeta = computed(() => {
+  if (!props.responseMeta) return null
+  try {
+    return JSON.parse(props.responseMeta)
+  } catch {
+    return null
+  }
+})
+
+const responseItems = computed<any[]>(() => {
+  if (!props.responseItems) return []
+  try {
+    const parsed = JSON.parse(props.responseItems)
+    return Array.isArray(parsed) ? parsed.slice(-8) : []
+  } catch {
+    return []
+  }
+})
+
+const responseProcessItems = computed(() =>
+  responseItems.value.filter(item =>
+    ['run_status', 'tool_call', 'tool_result', 'artifact'].includes(item.type)
+  )
+)
+
+const responseItemLabel = (item: any) => {
+  const toolLabels: Record<string, string> = {
+    web_search: '搜索',
+    file_reader: '文件',
+    image_generation: '绘图',
+    image_edit: '修图',
+  }
+  if (item.toolName) return toolLabels[item.toolName] || item.toolName
+  if (item.type === 'artifact') return item.artifactType === 'image' ? '图片' : '产物'
+  return item.status === 'completed' ? '完成' : item.status === 'failed' ? '失败' : '运行'
+}
+
+const isResponsesMode = computed(() => responseMeta.value?.apiFormat === 'responses')
+
+const responseScenarioLabel = computed(() => {
+  const scenario = responseMeta.value?.scenario
+  const labels: Record<string, string> = {
+    chat: '普通对话',
+    realtime: '实时信息',
+    vision: '看图理解',
+    image_generation: '图片生成',
+    image_edit: '图片修改',
+    file_analysis: '文件处理',
+    multimodal: '多模态',
+  }
+  return labels[scenario] || ''
+})
+
+const responseStatusLabel = computed(() => {
+  const status = responseMeta.value?.status
+  const labels: Record<string, string> = {
+    created: '已创建',
+    in_progress: '生成中',
+    completed: '已完成',
+    failed: '失败',
+    cancelled: '已取消',
+  }
+  return labels[status] || ''
+})
+
+const attachmentSummaryText = computed(() => {
+  const summary = responseMeta.value?.attachmentSummary
+  if (!summary) return ''
+  const parts = []
+  if (summary.images) parts.push(`${summary.images} 张图片`)
+  if (summary.documents) parts.push(`${summary.documents} 个文件`)
+  if (summary.pdfs) parts.push(`${summary.pdfs} 个 PDF`)
+  return parts.join(' · ')
+})
+
+const reasoningElapsedText = computed(() => {
+  const elapsedMs = Number(responseMeta.value?.elapsedMs || 0)
+  if (!elapsedMs) return ''
+  const seconds = Math.max(1, Math.round(elapsedMs / 1000))
+  return ` ${seconds} 秒`
+})
+
+const thinkingTitle = computed(() => {
+  if (props.loading && !text.value) return isResponsesMode.value ? '正在思考' : '深度思考中'
+  if (reasoningText.value)
+    return isResponsesMode.value ? `已思考${reasoningElapsedText.value}` : '已深度思考'
+  return isResponsesMode.value ? '思考中' : '深度思考'
+})
+
+const reasoningStatusText = computed(() => {
+  if (props.loading && !text.value) return '生成答案前正在整理推理过程'
+  if (isResponsesMode.value) return '来自 Responses API 的推理摘要'
+  return '模型推理过程'
 })
 
 function highlightBlock(str: string, lang?: string) {
@@ -994,18 +1091,69 @@ function openSingleImagePreview(src: string) {
       </transition>
     </div>
 
+    <!-- Agent 运行过程 -->
+    <div
+      v-if="!isUserMessage && responseProcessItems.length"
+      class="mb-2 rounded-2xl border border-gray-200 bg-white/70 p-3 text-sm text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-800/40 dark:text-gray-300"
+    >
+      <div class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+        <span>执行过程</span>
+        <span>{{ responseProcessItems.length }} 步</span>
+      </div>
+      <div class="flex flex-col gap-2">
+        <div
+          v-for="item in responseProcessItems"
+          :key="item.id"
+          class="flex items-start gap-2 rounded-xl bg-gray-50 px-3 py-2 dark:bg-gray-900/40"
+        >
+          <span
+            class="mt-0.5 min-w-[2.5rem] rounded-full bg-gray-200 px-2 py-0.5 text-center text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+          >
+            {{ responseItemLabel(item) }}
+          </span>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-gray-700 dark:text-gray-200">
+              {{ item.title || item.status || item.type }}
+            </div>
+            <div v-if="item.error" class="mt-1 text-xs text-red-500">
+              {{ item.error }}
+            </div>
+          </div>
+          <span class="text-xs text-gray-400">{{ item.status }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 深度思考内容 -->
-    <div v-if="!isUserMessage && (reasoningText || (loading && usingDeepThinking))" class="mb-2">
+    <div
+      v-if="
+        !isUserMessage && (reasoningText || (loading && (usingDeepThinking || isResponsesMode)))
+      "
+      class="mb-2"
+    >
       <div
         @click="showThinking = !showThinking"
         class="text-gray-600 mb-1 cursor-pointer items-center btn-pill glow-container"
+        :class="{ 'bg-gray-100 dark:bg-gray-800': isResponsesMode }"
       >
         <TwoEllipses theme="outline" size="18" class="mr-1 flex" />
-        <span v-if="reasoningText">{{ text || !loading ? '已深度思考' : '深度思考中' }}</span>
-        <span v-else-if="loading && usingDeepThinking">深度思考</span>
+        <span>{{ thinkingTitle }}</span>
+        <span
+          v-if="isResponsesMode"
+          class="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+        >
+          Responses
+        </span>
+        <span
+          v-if="responseScenarioLabel"
+          class="ml-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+        >
+          {{ responseScenarioLabel }}
+        </span>
         <LoadingOne
           v-if="
-            (loading && usingDeepThinking && !reasoningText) || (!text && loading && reasoningText)
+            (loading && (usingDeepThinking || isResponsesMode) && !reasoningText) ||
+            (!text && loading && reasoningText)
           "
           class="rotate-icon flex mx-1"
         />
@@ -1013,7 +1161,8 @@ function openSingleImagePreview(src: string) {
         <Up v-else-if="reasoningText" size="18" class="ml-1 flex" />
         <div
           v-if="
-            (loading && usingDeepThinking && !reasoningText) || (!text && loading && reasoningText)
+            (loading && (usingDeepThinking || isResponsesMode) && !reasoningText) ||
+            (!text && loading && reasoningText)
           "
           class="glow-band"
         ></div>
@@ -1023,11 +1172,25 @@ function openSingleImagePreview(src: string) {
         <div
           v-if="showThinking && reasoningText"
           :class="[
-            'markdown-body text-gray-600 dark:text-gray-400 pl-5 mt-2 border-l-2 border-gray-300 dark:border-gray-600 overflow-hidden transition-opacity duration-500 ease-in-out',
+            'mt-2 overflow-hidden rounded-2xl border border-gray-200 bg-gray-50/80 p-3 text-gray-600 shadow-sm transition-opacity duration-500 ease-in-out dark:border-gray-700 dark:bg-gray-800/50 dark:text-gray-400',
             { 'markdown-body-generate': loading && !text },
           ]"
-          v-html="reasoningText"
-        ></div>
+        >
+          <div
+            class="mb-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-500"
+          >
+            <span>{{ reasoningStatusText }}</span>
+            <span class="flex items-center gap-2">
+              <span v-if="attachmentSummaryText">{{ attachmentSummaryText }}</span>
+              <span v-if="responseStatusLabel">{{ responseStatusLabel }}</span>
+              <span v-if="reasoningElapsedText">{{ reasoningElapsedText.trim() }}</span>
+            </span>
+          </div>
+          <div
+            class="markdown-body border-l-2 border-gray-300 pl-4 dark:border-gray-600"
+            v-html="reasoningText"
+          ></div>
+        </div>
       </transition>
     </div>
 

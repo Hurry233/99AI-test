@@ -9813,7 +9813,7 @@ let OpenAIChatService = class OpenAIChatService {
         return deepThinkingType === 2 && result.full_content.length > 0;
     }
     async handleRegularResponse(messagesHistory, inputs, result) {
-        const { apiKey, model, proxyUrl, timeout, temperature, max_tokens, searchResults, images, abortController, onProgress, } = inputs;
+        const { apiKey, model, proxyUrl, timeout, temperature, max_tokens, extraParam, searchResults, images, abortController, onProgress, } = inputs;
         const processedMessages = this.prepareSystemMessage(messagesHistory, {
             searchResults,
             images,
@@ -9825,6 +9825,7 @@ let OpenAIChatService = class OpenAIChatService {
             timeout,
             temperature,
             max_tokens,
+            extraParam,
             abortController,
             onProgress,
         }, result);
@@ -9842,6 +9843,8 @@ let OpenAIChatService = class OpenAIChatService {
             full_reasoning_content: '',
             networkSearchResult: '',
             fileVectorResult: '',
+            response_meta: null,
+            response_items: [],
             finishReason: null,
         };
         try {
@@ -9951,6 +9954,16 @@ let OpenAIChatService = class OpenAIChatService {
                 apiKey: key,
                 baseURL: await (0, correctApiBaseUrl_1.correctApiBaseUrl)(proxyUrl),
             });
+            const useResponsesApi = this.shouldUseResponsesApi(openaiBaseModel, undefined);
+            if (useResponsesApi) {
+                common_1.Logger.debug(`全局模型使用Responses API调用: ${openaiBaseModel || 'gpt-4o-mini'}`, 'OpenAIChatService');
+                const response = await openai.responses.create(this.buildResponsesRequest(openaiBaseModel || 'gpt-4o-mini', requestData, {
+                    stream: false,
+                }), {
+                    timeout: 30000,
+                });
+                return this.extractResponsesText(response);
+            }
             const response = await openai.chat.completions.create({
                 model: openaiBaseModel || 'gpt-4o-mini',
                 messages: requestData,
@@ -10018,8 +10031,451 @@ let OpenAIChatService = class OpenAIChatService {
         }
         return processedMessages;
     }
+    shouldUseResponsesApi(model, extraParam) {
+        const normalizedModel = String(model || '').toLowerCase();
+        const normalizedApiFormat = String(extraParam?.apiFormat || extraParam?.api_format || extraParam?.callFormat || extraParam?.call_format || '').toLowerCase();
+        if (extraParam?.useResponsesApi === true || extraParam?.use_responses_api === true || normalizedApiFormat === 'responses') {
+            return true;
+        }
+        if (extraParam?.useChatCompletions === true || extraParam?.use_chat_completions === true || normalizedApiFormat === 'chat_completions') {
+            return false;
+        }
+        return /^gpt-5(?:[\.-]|$)/.test(normalizedModel) || /^gpt-6(?:[\.-]|$)/.test(normalizedModel);
+    }
+    buildResponsesInput(messagesHistory, responseContext = {}) {
+        const instructions = [];
+        const input = [];
+        const normalizeText = (content) => {
+            if (Array.isArray(content)) {
+                return content.map(item => item?.text || '').filter(Boolean).join('');
+            }
+            return String(content || '');
+        };
+        for (const message of messagesHistory || []) {
+            const role = message?.role || 'user';
+            if (role === 'system' || role === 'developer') {
+                instructions.push(normalizeText(message.content));
+                continue;
+            }
+            const normalizedRole = role === 'assistant' ? 'assistant' : 'user';
+            if (!Array.isArray(message?.content)) {
+                input.push({
+                    role: normalizedRole,
+                    content: normalizeText(message?.content),
+                });
+                continue;
+            }
+            const content = message.content
+                .map(item => {
+                if (item?.type === 'image_url') {
+                    return {
+                        type: 'input_image',
+                        image_url: item.image_url?.url || item.image_url,
+                    };
+                }
+                if (item?.type === 'input_image') {
+                    return item;
+                }
+                return {
+                    type: 'input_text',
+                    text: item?.text || String(item || ''),
+                };
+            })
+                .filter(item => item.text || item.image_url);
+            input.push({
+                role: normalizedRole,
+                content,
+            });
+        }
+        const files = Array.isArray(responseContext?.files) ? responseContext.files : [];
+        const inputFiles = files.filter(file => this.isResponsesInputFile(file));
+        if (inputFiles.length > 0 && input.length > 0) {
+            const targetMessage = [...input].reverse().find(item => item.role === 'user') || input[input.length - 1];
+            const fileParts = inputFiles.map(file => this.buildResponsesFilePart(file));
+            if (typeof targetMessage.content === 'string') {
+                targetMessage.content = [
+                    ...fileParts,
+                    {
+                        type: 'input_text',
+                        text: targetMessage.content,
+                    },
+                ];
+            }
+            else if (Array.isArray(targetMessage.content)) {
+                targetMessage.content = [
+                    ...fileParts,
+                    ...targetMessage.content,
+                ];
+            }
+        }
+        return {
+            instructions: instructions.filter(Boolean).join('\n'),
+            input,
+        };
+    }
+    inferResponsesScenario(responseContext = {}, responsesOptions = {}) {
+        if (responseContext.scenario) {
+            return responseContext.scenario;
+        }
+        if (responsesOptions?.tools?.some?.(tool => tool?.type === 'image_generation')) {
+            return responseContext.hasInputImages ? 'image_edit' : 'image_generation';
+        }
+        if (responseContext.usingNetwork) {
+            return 'realtime';
+        }
+        if (responseContext.hasDocuments) {
+            return 'file_analysis';
+        }
+        if (responseContext.hasInputImages) {
+            return 'vision';
+        }
+        return 'chat';
+    }
+    appendResponsesTool(tools, tool) {
+        if (!tools.some(item => item?.type === tool.type)) {
+            tools.push(tool);
+        }
+    }
+    getResponsesFileExtension(file) {
+        const source = String(file?.name || file?.url || '').split('?')[0];
+        return source.includes('.') ? source.split('.').pop().toLowerCase() : '';
+    }
+    isResponsesInputFile(file) {
+        if (file?.file_id || file?.fileId) {
+            return true;
+        }
+        const url = String(file?.url || '');
+        if (!/^https?:\/\//i.test(url)) {
+            return false;
+        }
+        const acceptedExtensions = new Set(['pdf', 'txt', 'md', 'json', 'html', 'xml', 'js', 'ts', 'py', 'java', 'c', 'cpp', 'cs', 'go', 'rs', 'php', 'rb', 'swift', 'kt', 'doc', 'docx', 'rtf', 'odt', 'ppt', 'pptx', 'csv', 'tsv', 'xls', 'xlsx']);
+        return acceptedExtensions.has(this.getResponsesFileExtension(file));
+    }
+    buildResponsesFilePart(file) {
+        const part = {
+            type: 'input_file',
+            file_url: file.url,
+        };
+        if (file.file_id || file.fileId) {
+            delete part.file_url;
+            part.file_id = file.file_id || file.fileId;
+        }
+        if (file.filename || file.name) {
+            part.filename = file.filename || file.name;
+        }
+        return part;
+    }
+    buildResponsesRequest(model, messagesHistory, options) {
+        const extraParam = options?.extraParam || {};
+        const responsesOptions = extraParam.responses || extraParam.responseOptions || extraParam.response_options || {};
+        const responseContext = extraParam.responseContext || extraParam.response_context || {};
+        const { instructions, input } = this.buildResponsesInput(messagesHistory, responseContext);
+        const scenario = this.inferResponsesScenario(responseContext, responsesOptions);
+        const request = {
+            model,
+            input,
+            stream: options?.stream ?? true,
+            metadata: {
+                ...(responsesOptions.metadata || {}),
+                scenario,
+            },
+        };
+        if (instructions) {
+            request.instructions = instructions;
+        }
+        if (options?.max_tokens) {
+            request.max_output_tokens = options.max_tokens;
+        }
+        const isLatestGpt = /^gpt-[56](?:[\.-]|$)/.test(String(model || '').toLowerCase());
+        if (!isLatestGpt && options?.temperature !== undefined && options?.temperature !== null && options?.temperature !== '') {
+            request.temperature = options.temperature;
+        }
+        const passthroughKeys = ['reasoning', 'text', 'tool_choice', 'parallel_tool_calls', 'previous_response_id', 'store', 'service_tier', 'truncation', 'top_p', 'max_tool_calls'];
+        for (const key of passthroughKeys) {
+            if (responsesOptions[key] !== undefined) {
+                request[key] = responsesOptions[key];
+            }
+        }
+        const tools = Array.isArray(responsesOptions.tools) ? [...responsesOptions.tools] : [];
+        if (responseContext.usingNetwork && responsesOptions.useHostedWebSearch !== false) {
+            const webSearchTool = {
+                type: responsesOptions.webSearchToolType || 'web_search',
+                ...(responsesOptions.web_search || responsesOptions.webSearch || {}),
+            };
+            this.appendResponsesTool(tools, webSearchTool);
+            request.tool_choice = request.tool_choice || 'auto';
+        }
+        if ((scenario === 'image_generation' || scenario === 'image_edit') && responsesOptions.useImageGenerationTool !== false) {
+            const imageTool = {
+                type: 'image_generation',
+            };
+            const imageOptions = responsesOptions.image_generation || responsesOptions.imageGeneration || {};
+            for (const key of ['size', 'quality', 'format', 'compression', 'background', 'partial_images', 'action']) {
+                const value = imageOptions[key] ?? extraParam[key];
+                if (value !== undefined && value !== '') {
+                    imageTool[key] = value;
+                }
+            }
+            if (!imageTool.action) {
+                imageTool.action = scenario === 'image_edit' ? 'edit' : 'auto';
+            }
+            this.appendResponsesTool(tools, imageTool);
+            request.tool_choice = request.tool_choice || 'auto';
+        }
+        if (tools.length > 0) {
+            request.tools = tools;
+        }
+        if (options?.stream) {
+            request.stream_options = {
+                include_obfuscation: false,
+                ...(responsesOptions.stream_options || responsesOptions.streamOptions || {}),
+            };
+        }
+        return request;
+    }
+    extractResponsesText(response) {
+        if (!response) {
+            return '';
+        }
+        if (typeof response.output_text === 'string') {
+            return response.output_text;
+        }
+        return (response.output || [])
+            .flatMap(item => item?.content || [])
+            .map(content => content?.text || '')
+            .join('');
+    }
+    emitResponseItem(result, onProgress, item) {
+        const normalizedItem = {
+            id: item.id || `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            createdAt: item.createdAt || new Date().toISOString(),
+            ...item,
+        };
+        result.response_items = [...(result.response_items || []), normalizedItem];
+        onProgress?.({
+            response_items: [normalizedItem],
+        });
+        return normalizedItem;
+    }
+    emitResponseMeta(result, onProgress, patch) {
+        result.response_meta = {
+            ...(result.response_meta || {}),
+            ...patch,
+        };
+        onProgress?.({
+            response_meta: result.response_meta,
+        });
+    }
+    async handleResponsesChat(openai, messagesHistory, inputs, result) {
+        const { model, temperature, max_tokens, extraParam, abortController, onProgress, } = inputs;
+        const startedAt = Date.now();
+        const responsesOptions = extraParam?.responses || extraParam?.responseOptions || extraParam?.response_options || {};
+        const responseContext = extraParam?.responseContext || extraParam?.response_context || {};
+        const scenario = this.inferResponsesScenario(responseContext, responsesOptions);
+        this.emitResponseMeta(result, onProgress, {
+            apiFormat: 'responses',
+            status: 'in_progress',
+            scenario,
+            model,
+            startedAt,
+            elapsedMs: 0,
+            attachmentSummary: responseContext.attachmentSummary,
+        });
+        this.emitResponseItem(result, onProgress, {
+            type: 'run_status',
+            status: 'planning',
+            title: '正在规划回答',
+            scenario,
+            data: {
+                model,
+                apiFormat: 'responses',
+            },
+        });
+        if (responseContext.usingNetwork) {
+            this.emitResponseItem(result, onProgress, {
+                type: 'tool_call',
+                toolName: 'web_search',
+                status: 'running',
+                title: '正在检索实时信息',
+            });
+        }
+        if (responseContext.hasDocuments) {
+            this.emitResponseItem(result, onProgress, {
+                type: 'tool_call',
+                toolName: 'file_reader',
+                status: 'running',
+                title: '正在读取附件',
+                data: {
+                    files: responseContext.files || [],
+                    attachmentSummary: responseContext.attachmentSummary,
+                },
+            });
+        }
+        if (scenario === 'image_generation' || scenario === 'image_edit') {
+            this.emitResponseItem(result, onProgress, {
+                type: 'tool_call',
+                toolName: scenario === 'image_edit' ? 'image_edit' : 'image_generation',
+                status: 'running',
+                title: scenario === 'image_edit' ? '正在修改图片' : '正在生成图片',
+            });
+        }
+        common_1.Logger.debug(`Responses请求 - Input: ${JSON.stringify(messagesHistory)}`, 'OpenAIChatService');
+        const stream = await openai.responses.create(this.buildResponsesRequest(model, messagesHistory, {
+            stream: true,
+            max_tokens,
+            temperature,
+            extraParam,
+        }), {
+            signal: abortController.signal,
+        });
+        for await (const event of stream) {
+            if (abortController.signal.aborted) {
+                this.emitResponseMeta(result, onProgress, {
+                    status: 'cancelled',
+                    elapsedMs: Date.now() - startedAt,
+                });
+                this.emitResponseItem(result, onProgress, {
+                    type: 'run_status',
+                    status: 'cancelled',
+                    title: '运行已取消',
+                });
+                break;
+            }
+            if (event.type === 'response.created' || event.type === 'response.in_progress') {
+                const responseStatus = event.response?.status || (event.type === 'response.created' ? 'created' : 'in_progress');
+                const responseId = event.response?.id || result.response_meta?.responseId;
+                this.emitResponseMeta(result, onProgress, {
+                    status: responseStatus,
+                    responseId,
+                    model: event.response?.model || model,
+                    createdAt: event.response?.created_at || result.response_meta?.createdAt,
+                    elapsedMs: Date.now() - startedAt,
+                });
+                if (event.type === 'response.created') {
+                    this.emitResponseItem(result, onProgress, {
+                        type: 'run_status',
+                        status: 'created',
+                        title: '已创建 Responses 运行',
+                        responseId,
+                    });
+                }
+            }
+            else if (event.type === 'response.output_text.delta' || event.type === 'response.refusal.delta') {
+                const content = event.delta || '';
+                if (content) {
+                    result.content = [
+                        {
+                            type: 'text',
+                            text: content,
+                        },
+                    ];
+                    result.full_content += content;
+                    onProgress?.({
+                        content: result.content,
+                    });
+                }
+            }
+            else if (event.type === 'response.reasoning_summary_text.delta' || event.type === 'response.reasoning_text.delta') {
+                const reasoningContent = event.delta || '';
+                if (reasoningContent) {
+                    result.reasoning_content = [
+                        {
+                            type: 'text',
+                            text: reasoningContent,
+                        },
+                    ];
+                    result.full_reasoning_content += reasoningContent;
+                    onProgress?.({
+                        reasoning_content: result.reasoning_content,
+                    });
+                }
+            }
+            else if (event.type === 'response.completed') {
+                result.finishReason = 'stop';
+                const outputItems = event.response?.output || [];
+                const imageResults = outputItems.filter(item => item?.type === 'image_generation_call' && item?.result).map(item => item.result);
+                if (imageResults.length > 0) {
+                    const markdownImages = imageResults.map((image, index) => `\n\n![生成图片 ${index + 1}](data:image/png;base64,${image})`).join('');
+                    imageResults.forEach((image, index) => {
+                        this.emitResponseItem(result, onProgress, {
+                            type: 'artifact',
+                            artifactType: 'image',
+                            status: 'completed',
+                            title: `生成图片 ${index + 1}`,
+                            data: {
+                                mimeType: 'image/png',
+                                b64: image,
+                                src: `data:image/png;base64,${image}`,
+                            },
+                        });
+                    });
+                    result.content = [
+                        {
+                            type: 'text',
+                            text: markdownImages,
+                        },
+                    ];
+                    result.full_content += markdownImages;
+                    onProgress?.({
+                        content: result.content,
+                    });
+                }
+                this.emitResponseItem(result, onProgress, {
+                    type: 'run_status',
+                    status: 'completed',
+                    title: '运行完成',
+                    scenario,
+                    data: {
+                        outputTypes: outputItems.map(item => item?.type).filter(Boolean),
+                        generatedImageCount: imageResults.length,
+                    },
+                });
+                this.emitResponseMeta(result, onProgress, {
+                    status: event.response?.status || 'completed',
+                    responseId: event.response?.id || result.response_meta?.responseId,
+                    model: event.response?.model || model,
+                    usage: event.response?.usage,
+                    outputTypes: outputItems.map(item => item?.type).filter(Boolean),
+                    generatedImageCount: imageResults.length,
+                    elapsedMs: Date.now() - startedAt,
+                });
+            }
+            else if (event.type === 'response.image_generation_call.partial_image' || event.type === 'image_generation.partial_image') {
+                this.emitResponseMeta(result, onProgress, {
+                    imageStatus: 'generating',
+                    partialImageIndex: event.partial_image_index,
+                    hasPartialImage: Boolean(event.partial_image_b64 || event.b64_json),
+                    elapsedMs: Date.now() - startedAt,
+                });
+                this.emitResponseItem(result, onProgress, {
+                    type: 'tool_result',
+                    toolName: 'image_generation',
+                    status: 'running',
+                    title: '收到图片生成预览',
+                    data: {
+                        partialImageIndex: event.partial_image_index,
+                        hasPartialImage: Boolean(event.partial_image_b64 || event.b64_json),
+                    },
+                });
+            }
+            else if (event.type === 'response.failed' || event.type === 'response.error' || event.type === 'error') {
+                const errorMessage = event.error?.message || event.response?.error?.message || 'Responses API请求失败';
+                this.emitResponseMeta(result, onProgress, {
+                    status: 'failed',
+                    elapsedMs: Date.now() - startedAt,
+                });
+                this.emitResponseItem(result, onProgress, {
+                    type: 'run_status',
+                    status: 'failed',
+                    title: '运行失败，已降级返回错误',
+                    error: errorMessage,
+                });
+                throw new Error(errorMessage);
+            }
+        }
+    }
     async handleOpenAIChat(messagesHistory, inputs, result) {
-        const { apiKey, model, proxyUrl, timeout, temperature, max_tokens, abortController, onProgress, } = inputs;
+        const { apiKey, model, proxyUrl, timeout, temperature, max_tokens, extraParam, abortController, onProgress, } = inputs;
         const streamData = {
             model,
             messages: messagesHistory,
@@ -10033,6 +10489,18 @@ let OpenAIChatService = class OpenAIChatService {
         });
         try {
             common_1.Logger.debug(`对话请求 - Messages: ${JSON.stringify(streamData.messages)}`, 'OpenAIChatService');
+            if (this.shouldUseResponsesApi(model, extraParam)) {
+                common_1.Logger.debug(`模型 ${model} 使用Responses API调用格式`, 'OpenAIChatService');
+                await this.handleResponsesChat(openai, streamData.messages, {
+                    model: streamData.model,
+                    max_tokens,
+                    temperature: streamData.temperature,
+                    extraParam,
+                    abortController,
+                    onProgress,
+                }, result);
+                return;
+            }
             const stream = await openai.chat.completions.create({
                 model: streamData.model,
                 messages: streamData.messages,
