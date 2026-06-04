@@ -3,16 +3,56 @@ import { correctApiBaseUrl } from '@/common/utils/correctApiBaseUrl';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { GlobalConfigService } from '../../globalConfig/globalConfig.service';
-import { NetSearchService } from '../search/netSearch.service';
-import { AgentRunService } from '../agent/agent-run.service';
+import { ToolExecutorService } from './tool-executor.service';
+import { ModelGatewayService } from './model-gateway.service';
+import { ToolRegistryService } from './tool-registry.service';
 
 @Injectable()
-export class OpenAIChatService {
+export class AgentRunService {
   constructor(
     private readonly globalConfigService: GlobalConfigService,
-    private readonly netSearchService: NetSearchService,
-    private readonly agentRunService: AgentRunService,
+    private readonly toolExecutorService: ToolExecutorService,
+    private readonly modelGatewayService: ModelGatewayService,
+    private readonly toolRegistryService: ToolRegistryService,
   ) {}
+
+  private inferRunOptions(inputs: {
+    prompt?: string;
+    fileUrl?: any;
+    imageUrl?: any;
+    usingNetwork?: boolean;
+    usingMcpTool?: boolean;
+    explicitExtraParam?: any;
+  }): any {
+    const tools = [];
+    const normalizedPrompt = String(inputs.prompt || '').toLowerCase();
+
+    if (
+      inputs.usingNetwork ||
+      /最新|今天|新闻|搜索|联网|latest|today|news|search/.test(normalizedPrompt)
+    ) {
+      tools.push(this.toolRegistryService.getTool('web_search'));
+    }
+
+    if (inputs.fileUrl) {
+      tools.push(this.toolRegistryService.getTool('file_reader'));
+    }
+
+    if (/画|生成图片|image|picture|draw|generate/.test(normalizedPrompt) || inputs.imageUrl) {
+      tools.push(this.toolRegistryService.getTool('image_generation'));
+    }
+
+    return {
+      ...(inputs.explicitExtraParam || {}),
+      inferredScenario: {
+        tools: tools.map(tool => tool.name),
+        hasAttachment: Boolean(inputs.fileUrl || inputs.imageUrl),
+        requestedNetwork: Boolean(inputs.usingNetwork),
+        requestedMcpTool: Boolean(inputs.usingMcpTool),
+      },
+      toolDefinitions: tools,
+    };
+  }
 
   /**
    * 处理深度思考逻辑
@@ -120,10 +160,7 @@ export class OpenAIChatService {
       timeout: timeout * 5,
     });
 
-    Logger.debug(
-      `思考流请求 - Messages: ${JSON.stringify(processedMessages)}`,
-      'OpenAIChatService',
-    );
+    Logger.debug(`思考流请求 - Messages: ${JSON.stringify(processedMessages)}`, 'AgentRunService');
 
     // 构建请求配置
     const requestConfig: any = {
@@ -135,7 +172,7 @@ export class OpenAIChatService {
     // 如果是 grok-3-mini-latest 模型，添加 reasoning_effort 参数
     // if (deepModel === 'grok-3-mini-latest') {
     //   requestConfig.reasoning_effort = 'high';
-    //   Logger.debug('为grok-3-mini-latest模型添加reasoning_effort=high参数', 'OpenAIChatService');
+    //   Logger.debug('为grok-3-mini-latest模型添加reasoning_effort=high参数', 'AgentRunService');
     // }
 
     const stream = await thinkOpenai.chat.completions.create(requestConfig, {
@@ -148,7 +185,7 @@ export class OpenAIChatService {
         break;
       }
       const delta = chunk.choices[0]?.delta;
-      Logger.debug(`思考流delta: ${JSON.stringify(delta)}`, 'OpenAIChatService');
+      Logger.debug(`思考流delta: ${JSON.stringify(delta)}`, 'AgentRunService');
       const content = delta?.content;
       const reasoning_content = (delta as any)?.reasoning_content || '';
 
@@ -156,10 +193,7 @@ export class OpenAIChatService {
       if (thinkingSourceType === 'reasoning_content') {
         // 已确定使用reasoning_content字段
         if (reasoning_content) {
-          Logger.debug(
-            `继续接收reasoning_content思考流: ${reasoning_content}`,
-            'OpenAIChatService',
-          );
+          Logger.debug(`继续接收reasoning_content思考流: ${reasoning_content}`, 'AgentRunService');
           result.reasoning_content = [
             {
               type: 'text',
@@ -173,7 +207,7 @@ export class OpenAIChatService {
         } else if (content && !content.includes('<think>')) {
           // 如果出现普通content，对于非DeepSeek模型终止思考流
           // 对于DeepSeek模型，将内容作为正常响应处理
-          Logger.debug(`reasoning_content模式下收到普通content: ${content}`, 'OpenAIChatService');
+          Logger.debug(`reasoning_content模式下收到普通content: ${content}`, 'AgentRunService');
           if (deepThinkingType === 2) {
             result.content = [
               {
@@ -195,7 +229,7 @@ export class OpenAIChatService {
         if (content) {
           if (content.includes('</think>')) {
             // 如果包含结束标签，提取剩余思考内容
-            Logger.debug(`检测到</think>标签，思考流结束`, 'OpenAIChatService');
+            Logger.debug(`检测到</think>标签，思考流结束`, 'AgentRunService');
             const regex = /([\s\S]*?)<\/think>([\s\S]*)/;
             const matches = content.match(regex);
 
@@ -240,7 +274,7 @@ export class OpenAIChatService {
             }
           } else {
             // 继续接收think标签内的思考内容
-            Logger.debug(`继续接收think标签思考流: ${content}`, 'OpenAIChatService');
+            Logger.debug(`继续接收think标签思考流: ${content}`, 'AgentRunService');
             result.reasoning_content = [
               {
                 type: 'text',
@@ -276,7 +310,7 @@ export class OpenAIChatService {
         // 确定使用reasoning_content字段作为思考流
         Logger.debug(
           `首次检测到reasoning_content，确定使用reasoning_content思考流方式: ${reasoning_content}`,
-          'OpenAIChatService',
+          'AgentRunService',
         );
         thinkingSourceType = 'reasoning_content';
         result.reasoning_content = [
@@ -292,13 +326,13 @@ export class OpenAIChatService {
       } else if (content) {
         if (content.includes('<think>')) {
           // 确定使用think标签作为思考流
-          Logger.debug(`首次检测到<think>标签，确定使用think标签思考流方式`, 'OpenAIChatService');
+          Logger.debug(`首次检测到<think>标签，确定使用think标签思考流方式`, 'AgentRunService');
           thinkingSourceType = 'think_tag';
 
           // 提取第一个块中的内容
           const thinkContent = content.replace(/<think>/, '');
           if (thinkContent) {
-            Logger.debug(`从<think>标签中提取的初始思考内容: ${thinkContent}`, 'OpenAIChatService');
+            Logger.debug(`从<think>标签中提取的初始思考内容: ${thinkContent}`, 'AgentRunService');
             result.reasoning_content = [
               {
                 type: 'text',
@@ -312,7 +346,7 @@ export class OpenAIChatService {
 
             // 如果已经包含了</think>标签，提取思考内容和剩余内容
             if (content.includes('</think>')) {
-              Logger.debug('在首个块中检测到</think>标签', 'OpenAIChatService');
+              Logger.debug('在首个块中检测到</think>标签', 'AgentRunService');
 
               const regex = /<think>([\s\S]*?)<\/think>([\s\S]*)/;
               const matches = content.match(regex);
@@ -359,7 +393,7 @@ export class OpenAIChatService {
           }
         } else {
           // 没有任何思考流标记，不同模型有不同处理
-          Logger.debug(`没有检测到思考流标记，处理普通内容: ${content}`, 'OpenAIChatService');
+          Logger.debug(`没有检测到思考流标记，处理普通内容: ${content}`, 'AgentRunService');
 
           if (deepThinkingType === 2) {
             // DeepSeek模型直接处理为正常内容
@@ -382,7 +416,7 @@ export class OpenAIChatService {
       }
     }
 
-    Logger.debug('思考流处理完成', 'OpenAIChatService');
+    Logger.debug('思考流处理完成', 'AgentRunService');
 
     // 如果是DeepSeek模型并且有内容，直接返回true表示应该终止请求
     return deepThinkingType === 2 && result.full_content.length > 0;
@@ -420,6 +454,7 @@ export class OpenAIChatService {
       max_tokens,
       searchResults,
       images,
+      extraParam,
       abortController,
       onProgress,
     } = inputs;
@@ -444,6 +479,7 @@ export class OpenAIChatService {
         timeout,
         temperature,
         max_tokens,
+        extraParam,
         abortController,
         onProgress,
       },
@@ -451,7 +487,7 @@ export class OpenAIChatService {
     );
   }
 
-  async chat(
+  async run(
     messagesHistory: any,
     inputs: {
       chatId: any;
@@ -483,13 +519,138 @@ export class OpenAIChatService {
         tool_calls?: string;
         networkSearchResult?: string;
         finishReason?: string;
+        // full_json?: string; // 编辑模式相关，已注释
       }) => void;
       onFailure?: (error: any) => void;
       onDatabase?: (data: any) => void;
       abortController: AbortController;
     },
   ) {
-    return this.agentRunService.run(messagesHistory, inputs);
+    const {
+      chatId,
+      maxModelTokens,
+      max_tokens,
+      apiKey,
+      model,
+      modelName,
+      temperature,
+      prompt,
+      timeout,
+      proxyUrl,
+      modelAvatar,
+      usingDeepThinking,
+      usingNetwork,
+      extraParam: explicitExtraParam,
+      deepThinkingType,
+      onProgress,
+      onFailure,
+      onDatabase,
+      abortController,
+    } = inputs;
+
+    // 创建原始消息历史的副本
+    const originalMessagesHistory = JSON.parse(JSON.stringify(messagesHistory));
+
+    const result: any = {
+      chatId,
+      modelName,
+      modelAvatar,
+      model,
+      status: 2,
+      full_content: '',
+      full_reasoning_content: '',
+      networkSearchResult: '',
+      fileVectorResult: '',
+      finishReason: null,
+    };
+
+    const extraParam = this.inferRunOptions({
+      prompt,
+      fileUrl: inputs.fileUrl,
+      imageUrl: inputs.imageUrl,
+      usingNetwork,
+      usingMcpTool: inputs.usingMcpTool,
+      explicitExtraParam,
+    });
+
+    try {
+      // 步骤1: 处理网络搜索 - 使用NetSearchService
+      const { searchResults, images } = await this.toolExecutorService.runWebSearch(
+        prompt || '',
+        {
+          usingNetwork,
+          onProgress,
+          onDatabase,
+        },
+        result,
+      );
+
+      // 步骤5: 处理深度思考
+      const shouldEndRequest = await this.handleDeepThinking(
+        messagesHistory,
+        {
+          apiKey,
+          model,
+          proxyUrl,
+          timeout,
+          usingDeepThinking,
+          searchResults,
+          abortController,
+          deepThinkingType,
+          onProgress,
+        },
+        result,
+      );
+
+      // 如果深度思考处理后应该终止请求，则直接返回结果
+      if (shouldEndRequest) {
+        result.content = '';
+        result.reasoning_content = '';
+        result.finishReason = 'stop';
+        return result;
+      }
+
+      // 步骤6: 处理常规响应
+      await this.handleRegularResponse(
+        originalMessagesHistory,
+        {
+          apiKey,
+          model,
+          proxyUrl,
+          timeout,
+          temperature,
+          max_tokens,
+          extraParam,
+          searchResults,
+          images,
+          abortController,
+          onProgress,
+        },
+        result,
+      );
+
+      result.content = [
+        {
+          type: 'text',
+          text: '',
+        },
+      ];
+      result.reasoning_content = [
+        {
+          type: 'text',
+          text: '',
+        },
+      ];
+      result.finishReason = 'stop';
+
+      return result;
+    } catch (error) {
+      const errorMessage = handleError(error);
+      Logger.error(`对话请求失败: ${errorMessage}`, 'AgentRunService');
+      result.errMsg = errorMessage;
+      onFailure?.(result);
+      return result;
+    }
   }
 
   async chatFree(prompt: string, systemMessage?: string, messagesHistory?: any[], imageUrl?: any) {
@@ -561,7 +722,7 @@ export class OpenAIChatService {
       return response.choices[0].message.content;
     } catch (error) {
       const errorMessage = handleError(error);
-      Logger.error(`全局模型调用失败: ${errorMessage}`, 'OpenAIChatService');
+      Logger.error(`全局模型调用失败: ${errorMessage}`, 'AgentRunService');
       return;
     }
   }
@@ -670,83 +831,12 @@ export class OpenAIChatService {
       timeout: any;
       temperature: any;
       max_tokens?: any;
+      extraParam?: any;
       abortController: AbortController;
       onProgress?: (data: any) => void;
     },
     result: any,
   ): Promise<void> {
-    const {
-      apiKey,
-      model,
-      proxyUrl,
-      timeout,
-      temperature,
-      max_tokens,
-      abortController,
-      onProgress,
-    } = inputs;
-
-    // 准备请求数据
-    const streamData = {
-      model,
-      messages: messagesHistory,
-      stream: true,
-      temperature,
-    };
-
-    // 创建OpenAI实例
-    const openai = new OpenAI({
-      apiKey: apiKey,
-      baseURL: await correctApiBaseUrl(proxyUrl),
-      timeout: timeout,
-    });
-
-    try {
-      Logger.debug(
-        `对话请求 - Messages: ${JSON.stringify(streamData.messages)}`,
-        'OpenAIChatService',
-      );
-
-      // 发送流式请求
-      const stream = await openai.chat.completions.create(
-        {
-          model: streamData.model,
-          messages: streamData.messages,
-          stream: true,
-          max_tokens: max_tokens,
-          temperature: streamData.temperature,
-        },
-        {
-          signal: abortController.signal,
-        },
-      );
-
-      // 处理流式响应
-      for await (const chunk of stream) {
-        if (abortController.signal.aborted) {
-          break;
-        }
-
-        const content = chunk.choices[0]?.delta?.content || '';
-
-        if (content) {
-          // 处理流式内容
-          result.content = [
-            {
-              type: 'text',
-              text: content,
-            },
-          ];
-
-          result.full_content += content;
-          onProgress?.({
-            content: result.content,
-          });
-        }
-      }
-    } catch (error) {
-      Logger.error(`OpenAI请求失败: ${handleError(error)}`, 'OpenAIChatService');
-      throw error;
-    }
+    await this.modelGatewayService.handleOpenAIChat(messagesHistory, inputs, result);
   }
 }
