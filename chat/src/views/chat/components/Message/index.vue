@@ -38,7 +38,7 @@ interface Props {
   networkSearchResult?: string
   fileVectorResult?: string
   tool_calls?: string
-  responseItems?: any[] | string
+  responseItems?: any[] | Chat.AgentTraceItem[] | string
   artifacts?: any[] | string
   attachments?: any[] | string
   runId?: string
@@ -50,7 +50,6 @@ interface Props {
   usingMcpTool?: boolean
   reasoningText?: string
   responseMeta?: string
-  responseItems?: string
   taskId?: string
   isWorkflowMessage?: boolean
   nodeType?: string

@@ -26,7 +26,12 @@ export function fetchDeleteGroupChatsAfterIdAPI<T>(data: { id: number }): Promis
 }
 
 /* 查询x组对话信息 */
-export function fetchQueryChatLogListAPI<T>(data: { groupId: number }): Promise<T> {
+export function fetchQueryChatLogListAPI<T>(data: {
+  groupId: number
+  traceMode?: 'full' | 'page' | 'none'
+  tracePage?: number
+  traceSize?: number
+}): Promise<T> {
   return get<T>({
     url: '/chatlog/chatList',
     data,
@@ -49,6 +54,17 @@ export function fetchQueryChatLogByAppIdAPI<T>(data: {
 export function fetchQuerySingleChatLogAPI<T>(data: { chatId: number }): Promise<T> {
   return get<T>({
     url: '/chatlog/querySingleChat',
+    data,
+  })
+}
+
+/* 重试失败的 trace 步骤 */
+export function fetchRetryTraceItemAPI<T>(data: {
+  runId: number
+  failedItemId: string
+}): Promise<T> {
+  return post<T>({
+    url: '/chatlog/retryTraceItem',
     data,
   })
 }

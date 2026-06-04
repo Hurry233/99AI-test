@@ -468,6 +468,7 @@ export class ChatService {
         ? useModel
         : null,
       runTrace: JSON.stringify(gatewayDecision.trace),
+      responseItems: [],
     });
     const userLogId = userSaveLog.id;
     const assistantLogId = assistantSaveLog.id;
@@ -577,6 +578,17 @@ export class ChatService {
               await this.chatLogService.updateChatLog(assistantLogId, {
                 content: data.errMsg,
                 status: 4,
+                responseItems: [
+                  {
+                    id: `error-${assistantLogId}`,
+                    type: 'error',
+                    title: '执行失败',
+                    summary: data.errMsg,
+                    status: 'failed',
+                    updatedAt: new Date().toISOString(),
+                    error: data.errMsg,
+                  },
+                ],
               });
             },
             onDatabase: async data => {
@@ -584,11 +596,33 @@ export class ChatService {
               if (data.networkSearchResult) {
                 await this.chatLogService.updateChatLog(assistantLogId, {
                   networkSearchResult: data.networkSearchResult,
+                  responseItems: [
+                    {
+                      id: `search-${assistantLogId}`,
+                      type: 'search',
+                      title: '联网搜索',
+                      summary: '已完成联网搜索',
+                      status: 'success',
+                      updatedAt: new Date().toISOString(),
+                      data: { raw: data.networkSearchResult },
+                    },
+                  ],
                 });
               }
               if (data.fileVectorResult) {
                 await this.chatLogService.updateChatLog(assistantLogId, {
                   fileVectorResult: data.fileVectorResult,
+                  responseItems: [
+                    {
+                      id: `file-read-${assistantLogId}`,
+                      type: 'file_read',
+                      title: '读取文件',
+                      summary: '已完成文件读取',
+                      status: 'success',
+                      updatedAt: new Date().toISOString(),
+                      data: { raw: data.fileVectorResult },
+                    },
+                  ],
                 });
               }
             },
@@ -731,6 +765,17 @@ export class ChatService {
           // 根据你的应用需求，你可能想要在这里设置response为一个错误消息或执行其他错误处理逻辑
           await this.chatLogService.updateChatLog(assistantLogId, {
             status: 5,
+            responseItems: [
+              {
+                id: `error-${assistantLogId}`,
+                type: 'error',
+                title: '执行失败',
+                summary: '处理请求时发生错误',
+                status: 'failed',
+                updatedAt: new Date().toISOString(),
+                error: '处理请求时发生错误',
+              },
+            ],
           });
           response = { error: '处理请求时发生错误' };
         }
