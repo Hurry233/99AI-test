@@ -516,7 +516,6 @@ export class OpenAIChatService {
     },
   ) {
     return this.agentRunService.run(messagesHistory, inputs);
-
   }
 
   async chatFree(prompt: string, systemMessage?: string, messagesHistory?: any[], imageUrl?: any) {
