@@ -52,14 +52,6 @@ const inputRef = ref<Ref | null>(null)
 const footerRef = ref<HTMLElement | null>(null) // 添加容器引用
 const isDragging = ref(false) // 添加拖拽状态标志
 const isFileDraggingOverPage = ref(false) // 添加文件拖到页面内(但未到输入框)的状态标志
-const extraParam = ref<{
-  size: string
-  style: string
-  quality?: string
-  compression?: string
-  background?: string
-}>({ size: '', style: '' })
-
 const showSuggestions = ref(false)
 const selectedApp = ref()
 const isSelectedApp = ref(false)
@@ -397,7 +389,6 @@ const handleSubmit = async (index?: number) => {
     modelType: useModelType,
     modelAvatar: modelAvatar,
     appId: appId,
-    extraParam: extraParam.value,
     fileUrl: submittedFileUrl,
     imageUrl: imageUrl,
     pluginParam: usingPlugin.value?.parameters,
