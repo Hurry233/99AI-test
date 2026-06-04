@@ -539,6 +539,8 @@ export class ChatService {
             imageUrl,
             isFileUpload,
             fileUrl,
+            userId: req.user.id,
+            sessionId: groupId ? String(groupId) : undefined,
             usingNetwork,
             timeout: modelTimeout,
             proxyUrl: proxyResUrl,

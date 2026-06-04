@@ -6,6 +6,10 @@ interface FileItem {
   name: string
   url: string
   type?: string
+  fileId?: string
+  mime?: string
+  size?: number
+  status?: string
 }
 
 interface Props {
@@ -33,6 +37,23 @@ const handleClearData = (index: number, isSavedFile: boolean) => {
 
 const handleClearSelectApp = () => {
   emit('clearSelectApp')
+}
+
+const formatFileSize = (size?: number) => {
+  if (!size) return ''
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+const statusText = (status?: string) => {
+  const map: Record<string, string> = {
+    uploaded: '等待解析',
+    parsing: '解析中',
+    parsed: '已解析',
+    failed: '解析失败',
+  }
+  return map[status || ''] || '已上传'
 }
 
 // 监听savedFiles变化，自动处理新上传的文件
@@ -134,7 +155,23 @@ watch(
                 </div>
               </div>
 
-              <span class="text-gray-500 max-w-48 truncate mr-4">{{ file.name }}</span>
+              <div class="flex flex-col min-w-0 mr-4">
+                <a
+                  :href="file.url"
+                  target="_blank"
+                  class="text-gray-500 max-w-48 truncate hover:underline"
+                  :title="file.fileId ? `fileId: ${file.fileId}` : file.name"
+                >
+                  {{ file.name }}
+                </a>
+                <span class="text-[10px] text-gray-400 truncate">
+                  {{ statusText(file.status) }}
+                  <template v-if="file.fileId"> · {{ file.fileId }}</template>
+                  <template v-if="formatFileSize(file.size)">
+                    · {{ formatFileSize(file.size) }}</template
+                  >
+                </span>
+              </div>
             </div>
             <!-- 删除按钮 -->
             <div

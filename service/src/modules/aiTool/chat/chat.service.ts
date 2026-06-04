@@ -491,6 +491,8 @@ export class OpenAIChatService {
       isFileUpload: any;
       isImageUpload?: any;
       fileUrl?: any;
+      userId?: number;
+      sessionId?: string;
       usingNetwork?: boolean;
       timeout: any;
       proxyUrl: any;
@@ -515,7 +517,9 @@ export class OpenAIChatService {
       abortController: AbortController;
     },
   ) {
+
     return this.agentRunService.run(messagesHistory, inputs);
+
   }
 
   async chatFree(prompt: string, systemMessage?: string, messagesHistory?: any[], imageUrl?: any) {

@@ -19,7 +19,7 @@ import {
 import PinyinMatch from 'pinyin-match'
 
 // import { getDocument } from 'pdfjs-dist';
-import { uploadFile } from '@/api/upload'
+import { uploadFile, uploadWorkspaceFile } from '@/api/upload'
 import { message } from '@/utils/message'
 import { computed, inject, nextTick, onMounted, onUnmounted, Ref, ref, watch } from 'vue'
 import FilePreview from './components/FilePreview.vue'
@@ -627,13 +627,17 @@ const handleUploadFile = async (file: File) => {
 
   isUploading.value = true
   try {
-    const response = await uploadFile(file)
-    console.log(`文件 ${file.name} 上传成功:`, response.data)
+    const response = await uploadWorkspaceFile(file, undefined, String(activeGroupId.value || ''))
+    console.log(`文件 ${file.name} 上传并创建工作区成功:`, response.data)
 
     // 将文件信息添加到对话组
     const fileInfo = {
       name: file.name,
-      url: response.data,
+      url: response.data?.url || response.data,
+      fileId: response.data?.fileId,
+      mime: response.data?.mime || file.type,
+      size: response.data?.size || file.size,
+      status: response.data?.status || 'uploaded',
       type: 'document',
     }
 
