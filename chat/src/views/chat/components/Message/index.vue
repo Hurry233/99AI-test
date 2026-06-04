@@ -48,6 +48,7 @@ interface Props {
   nodeType?: string
   stepName?: string
   workflowProgress?: number
+  response_items?: Chat.ArtifactResponseItem[]
 }
 
 // 添加计算属性判断是否是用户消息
@@ -151,6 +152,7 @@ function handleRegenerate() {
           :content="content"
           :modelType="modelType"
           :imageUrl="imageUrl"
+          :response_items="response_items"
           :ttsUrl="ttsUrl"
           :fileUrl="fileUrl"
           :useFileSearch="useFileSearch"

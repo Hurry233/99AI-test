@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import excel from 'exceljs';
 import { Request, Response } from 'express';
 import { In, Like, MoreThan, MoreThanOrEqual, Repository } from 'typeorm';
+import { ArtifactEntity } from '../artifact/artifact.entity';
 import { ChatGroupEntity } from '../chatGroup/chatGroup.entity';
 import { UserEntity } from '../user/user.entity';
 import { ChatLogEntity } from './chatLog.entity';
@@ -30,6 +31,8 @@ export class ChatLogService {
     private readonly userEntity: Repository<UserEntity>,
     @InjectRepository(ChatGroupEntity)
     private readonly chatGroupEntity: Repository<ChatGroupEntity>,
+    @InjectRepository(ArtifactEntity)
+    private readonly artifactEntity: Repository<ArtifactEntity>,
     private readonly modelsService: ModelsService,
   ) {}
 
@@ -232,7 +235,9 @@ export class ChatLogService {
         reasoning_content,
         tool_calls,
         content,
+        responseItems,
       } = item;
+      const parsedResponseItems = this.parseResponseItems(responseItems);
       return {
         chatId: id,
         dateTime: formatDate(createdAt),
@@ -246,7 +251,8 @@ export class ChatLogService {
         customId: customId,
         role: role,
         error: false,
-        imageUrl: imageUrl || fileInfo || '',
+        imageUrl: imageUrl || fileInfo || this.getFirstArtifactUrl(parsedResponseItems) || '',
+        response_items: parsedResponseItems,
         fileUrl: fileUrl,
         ttsUrl: ttsUrl,
         videoUrl: videoUrl,
@@ -263,6 +269,22 @@ export class ChatLogService {
         taskId: taskId,
       };
     });
+  }
+
+  private parseResponseItems(responseItems?: string) {
+    if (!responseItems) return [];
+    try {
+      const parsed = JSON.parse(responseItems);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      Logger.debug(`解析responseItems失败: ${error.message}`, 'ChatLogService');
+      return [];
+    }
+  }
+
+  private getFirstArtifactUrl(responseItems: any[]) {
+    return responseItems?.find(item => item?.type === 'artifact' && item?.artifactType === 'image')
+      ?.storageUrl;
   }
 
   /* 查询历史对话的列表 */
@@ -303,11 +325,14 @@ export class ChatLogService {
           reasoning_content,
           tool_calls,
           progress,
+          responseItems,
         } = item;
+        const parsedResponseItems = this.parseResponseItems(responseItems);
         const record = {
           role: role,
           content: content || (role === 'assistant' ? answer : prompt),
-          imageUrl: imageUrl || fileInfo || '',
+          imageUrl: imageUrl || fileInfo || this.getFirstArtifactUrl(parsedResponseItems) || '',
+          response_items: parsedResponseItems,
           fileUrl: fileUrl,
           ttsUrl: ttsUrl,
           videoUrl: videoUrl,

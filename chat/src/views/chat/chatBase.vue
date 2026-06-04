@@ -434,6 +434,7 @@ const onConversation = async ({
   chatId,
   taskId,
   imageUrl,
+  artifactReferences,
 }: Chat.ConversationParams) => {
   if (groupSources.value.length === 0) {
     await createNewChatGroup()
@@ -476,6 +477,7 @@ const onConversation = async ({
     fileParsing: fileParsing.value,
     usingNetwork: chatStore.usingNetwork,
     usingDeepThinking: chatStore.usingDeepThinking,
+    artifactReferences: artifactReferences || [],
   }
 
   console.log(usingPlugin.value)
@@ -520,6 +522,7 @@ const onConversation = async ({
     let networkSearchResult = ''
     let tool_calls = ''
     let promptReference = ''
+    let responseItems: Chat.ArtifactResponseItem[] = []
     let assistantLogId = ''
     let mcpToolUse = ''
     let finishReason = '' // 完成原因标识
@@ -763,6 +766,7 @@ const onConversation = async ({
         error: false,
         loading: true,
         imageUrl: data?.imageUrl,
+        response_items: responseItems,
         promptReference: promptReference,
         nodeType: nodeType,
         stepName: stepName,
@@ -802,6 +806,7 @@ const onConversation = async ({
         options,
         signal: controller.value.signal,
         extraParam: updatedExtraParam,
+        artifactReferences: artifactReferences || [],
         onDownloadProgress: ({ event }) => {
           // 使用新的fetch流式处理
           const responseText = event.target.responseText
@@ -859,6 +864,7 @@ const onConversation = async ({
                       error: false,
                       loading: true,
                       imageUrl: data?.imageUrl,
+                      response_items: responseItems,
                       promptReference: promptReference,
                       nodeType: nodeType,
                       stepName: stepName,
@@ -907,6 +913,7 @@ const onConversation = async ({
                       error: false,
                       loading: true,
                       imageUrl: data?.imageUrl,
+                      response_items: responseItems,
                       promptReference: promptReference,
                       nodeType: nodeType,
                       stepName: stepName,
@@ -931,6 +938,15 @@ const onConversation = async ({
                 if (jsonObj.fileVectorResult) fileVectorResult = jsonObj.fileVectorResult
                 if (jsonObj.tool_calls) tool_calls = jsonObj.tool_calls
                 if (jsonObj.promptReference) promptReference = jsonObj.promptReference
+                if (Array.isArray(jsonObj.response_items)) {
+                  responseItems = jsonObj.response_items
+                  const artifactImageUrls = responseItems
+                    .filter(item => item?.type === 'artifact' && item?.artifactType === 'image')
+                    .map(item => item.storageUrl)
+                    .filter(Boolean)
+                  if (artifactImageUrls.length)
+                    data = { ...(data || {}), imageUrl: artifactImageUrls.join(',') }
+                }
                 if (jsonObj.chatId) {
                   assistantLogId = jsonObj.chatId
                   console.log('assistantLogId', Number(assistantLogId))
@@ -995,6 +1011,7 @@ const onConversation = async ({
         error: false,
         loading: true,
         imageUrl: data?.imageUrl,
+        response_items: responseItems,
         promptReference: promptReference,
         nodeType: nodeType,
         stepName: stepName,
@@ -1373,6 +1390,7 @@ provide('tryParseJson', tryParseJson)
                     :modelAvatar="item.modelAvatar"
                     :status="item.status"
                     :imageUrl="item.imageUrl"
+                    :response_items="item.response_items"
                     :ttsUrl="item.ttsUrl"
                     :taskId="item.taskId"
                     :taskData="item.taskData"

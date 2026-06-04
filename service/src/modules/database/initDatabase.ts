@@ -3,6 +3,7 @@ import { config as loadEnv } from 'dotenv';
 import * as mysql from 'mysql2/promise';
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { AppEntity } from '../app/app.entity';
+import { ArtifactEntity } from '../artifact/artifact.entity';
 import { AppCatsEntity } from '../app/appCats.entity';
 import { UserAppsEntity } from '../app/userApps.entity';
 import { AutoReplyEntity } from '../autoReply/autoReply.entity';
@@ -35,6 +36,7 @@ const dataSourceOptions: DataSourceOptions = {
   password: process.env.DB_PASS,
   database: process.env.DB_DATABASE,
   entities: [
+    ArtifactEntity,
     Share,
     AutoReplyEntity,
     CramiEntity,

@@ -417,6 +417,7 @@ export class OpenAIChatService {
       timeout,
       temperature,
       max_tokens,
+      extraParam,
       searchResults,
       images,
       abortController,
@@ -433,6 +434,15 @@ export class OpenAIChatService {
       result,
     );
 
+    if (extraParam?.useResponsesApi || extraParam?.imageEditInputs?.length) {
+      await this.handleResponsesApi(
+        processedMessages,
+        { apiKey, model, proxyUrl, timeout, abortController, extraParam },
+        result,
+      );
+      return;
+    }
+
     // 步骤2: 处理OpenAI聊天API调用
     await this.handleOpenAIChat(
       processedMessages,
@@ -448,6 +458,69 @@ export class OpenAIChatService {
       },
       result,
     );
+  }
+
+  private async handleResponsesApi(
+    messagesHistory: any,
+    inputs: {
+      apiKey: any;
+      model: any;
+      proxyUrl: any;
+      timeout: any;
+      abortController: AbortController;
+      extraParam?: any;
+    },
+    result: any,
+  ): Promise<void> {
+    const { apiKey, model, proxyUrl, timeout, abortController, extraParam } = inputs;
+    const openai = new OpenAI({
+      apiKey,
+      baseURL: await correctApiBaseUrl(proxyUrl),
+      timeout,
+    });
+
+    const input = this.buildResponsesInput(messagesHistory, extraParam);
+    const request: any = {
+      model,
+      input,
+      tools: extraParam?.tools || [{ type: 'image_generation' }],
+    };
+
+    if (extraParam?.responseFormat) request.response_format = extraParam.responseFormat;
+    if (extraParam?.size) request.size = extraParam.size;
+    if (extraParam?.quality) request.quality = extraParam.quality;
+
+    Logger.debug(`Responses请求 - Input: ${JSON.stringify(input)}`, 'OpenAIChatService');
+    const response = await (openai as any).responses.create(request, {
+      signal: abortController.signal,
+    });
+
+    result.raw_response = response;
+    result.response_items = response.output || [];
+    result.full_content = response.output_text || '';
+  }
+
+  private buildResponsesInput(messagesHistory: any[], extraParam?: any) {
+    const input = messagesHistory.map(message => ({
+      role: message.role,
+      content: Array.isArray(message.content)
+        ? message.content.map(item =>
+            item.type === 'image_url'
+              ? { type: 'input_image', image_url: item.image_url?.url || item.image_url }
+              : { type: 'input_text', text: item.text || item.content || '' },
+          )
+        : [{ type: 'input_text', text: message.content || '' }],
+    }));
+
+    const imageEditInputs = extraParam?.imageEditInputs || [];
+    if (imageEditInputs.length && input.length) {
+      const lastUserMessage = [...input].reverse().find((message: any) => message.role === 'user');
+      if (lastUserMessage) {
+        lastUserMessage.content = [...imageEditInputs, ...lastUserMessage.content];
+      }
+    }
+
+    return input;
   }
 
   async chat(

@@ -119,4 +119,7 @@ export class ChatLogEntity extends BaseEntity {
 
   @Column({ comment: '文件向量搜索结果', nullable: true, type: 'mediumtext' })
   fileVectorResult: string;
+
+  @Column({ comment: '响应结构化条目', nullable: true, type: 'mediumtext' })
+  responseItems: string;
 }

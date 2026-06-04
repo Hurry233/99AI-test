@@ -99,6 +99,7 @@ interface Props {
   reasoningText?: string
   fileAnalysisProgress?: number
   useFileSearch?: boolean
+  response_items?: Chat.ArtifactResponseItem[]
 }
 
 interface Emit {
@@ -452,11 +453,22 @@ const imageUrlArray = computed(() => {
   return []
 })
 
+const imageArtifacts = computed(() =>
+  (props.response_items || []).filter(
+    item => item?.type === 'artifact' && item?.artifactType === 'image' && item?.storageUrl
+  )
+)
+
+const displayedImageUrls = computed(() => {
+  if (imageArtifacts.value.length) return imageArtifacts.value.map(item => item.storageUrl)
+  return imageUrlArray.value
+})
+
 const isImageUrl = computed(() => {
   if (!props.imageUrl) return false
 
   // 如果已经成功提取了URLs，则认为是图片
-  if (imageUrlArray.value.length > 0) {
+  if (displayedImageUrls.value.length > 0) {
     return true
   }
 
@@ -941,10 +953,51 @@ onMounted(() => {
 })
 
 function openImagePreview(index: number) {
-  // 通知父组件打开预览器
-  if (onOpenImagePreviewer && imageUrlArray.value.length > 0) {
-    onOpenImagePreviewer(imageUrlArray.value, index)
+  if (onOpenImagePreviewer && displayedImageUrls.value.length > 0) {
+    onOpenImagePreviewer(displayedImageUrls.value, index, { artifacts: imageArtifacts.value })
   }
+}
+
+function getArtifactForIndex(index: number) {
+  return imageArtifacts.value[index]
+}
+
+function handleSaveArtifact(artifact: Chat.ArtifactResponseItem) {
+  copyText({ text: artifact.storageUrl })
+  message()?.success('图片链接已复制，可用于保存')
+}
+
+function handleDownloadArtifact(artifact: Chat.ArtifactResponseItem) {
+  const link = document.createElement('a')
+  link.href = artifact.storageUrl
+  link.download = `${artifact.artifactId || 'artifact'}.png`
+  link.target = '_blank'
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+function handleContinueArtifact(artifact: Chat.ArtifactResponseItem) {
+  onConversation?.({
+    msg: '继续修改这张图片',
+    artifactReferences: [{ artifactId: artifact.artifactId, role: 'edit' }],
+    extraParam: {
+      useResponsesApi: true,
+      artifactReferences: [{ artifactId: artifact.artifactId, role: 'edit' }],
+    },
+  })
+}
+
+function handleReferenceArtifact(artifact: Chat.ArtifactResponseItem) {
+  onConversation?.({
+    msg: '以上图作为参考继续创作',
+    artifactReferences: [{ artifactId: artifact.artifactId, role: 'reference' }],
+    extraParam: {
+      useResponsesApi: true,
+      artifactReferences: [{ artifactId: artifact.artifactId, role: 'reference' }],
+    },
+  })
 }
 
 // 打开单张图片预览
@@ -1112,32 +1165,38 @@ function openSingleImagePreview(src: string) {
 
     <!-- 图片显示部分 -->
     <div
-      v-if="imageUrlArray && imageUrlArray.length > 0 && isImageUrl"
+      v-if="displayedImageUrls && displayedImageUrls.length > 0 && isImageUrl"
       :class="['my-2 w-full flex', isUserMessage ? 'justify-end' : 'justify-start']"
     >
       <div
         class="gap-2"
         :style="{
           display: 'grid',
-          gridTemplateColumns: `repeat(${Math.min(imageUrlArray.length, 4)}, 1fr)`,
+          gridTemplateColumns: `repeat(${Math.min(displayedImageUrls.length, 4)}, 1fr)`,
           gridAutoRows: '1fr',
           maxWidth: isUserMessage ? (isMobile ? '60vw' : '40vw') : '80vw',
           width: 'auto',
         }"
       >
-        <img
-          v-for="(file, index) in imageUrlArray"
-          :key="index"
-          :src="file"
-          alt="图片"
-          @click="openImagePreview(index)"
-          class="rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-90 transition-opacity w-auto h-auto max-h-[30vh] object-cover"
-          :style="{
-            aspectRatio: '1/1',
-            width: '160px',
-            height: '160px',
-          }"
-        />
+        <div v-for="(file, index) in displayedImageUrls" :key="index" class="artifact-image-card">
+          <img
+            :src="file"
+            alt="图片"
+            @click="openImagePreview(index)"
+            class="rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-90 transition-opacity w-auto h-auto max-h-[30vh] object-cover"
+            :style="{
+              aspectRatio: '1/1',
+              width: '160px',
+              height: '160px',
+            }"
+          />
+          <div v-if="getArtifactForIndex(index)" class="artifact-actions">
+            <button @click="handleSaveArtifact(getArtifactForIndex(index))">保存</button>
+            <button @click="handleDownloadArtifact(getArtifactForIndex(index))">下载</button>
+            <button @click="handleContinueArtifact(getArtifactForIndex(index))">继续修改</button>
+            <button @click="handleReferenceArtifact(getArtifactForIndex(index))">设为参考图</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1408,4 +1467,30 @@ pre.fold-leave-to {
 }
 
 /* 加载动画样式 */
+</style>
+
+<style scoped>
+.artifact-image-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  max-width: 160px;
+}
+.artifact-actions button {
+  border-radius: 9999px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  padding: 0.15rem 0.45rem;
+  font-size: 0.75rem;
+  color: rgb(75, 85, 99);
+  background: rgba(255, 255, 255, 0.75);
+}
+:global(.dark) .artifact-actions button {
+  color: rgb(209, 213, 219);
+  background: rgba(31, 41, 55, 0.75);
+}
 </style>
