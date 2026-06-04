@@ -50,6 +50,20 @@ declare namespace Chat {
     nodeType?: string
     stepName?: string
     workflowProgress?: number
+    response_items?: ArtifactResponseItem[]
+  }
+
+  interface ArtifactResponseItem {
+    type: 'artifact'
+    artifactType: string
+    artifactId: string
+    parentArtifactId?: string
+    version?: number
+    sourceRunId?: string
+    storageUrl: string
+    prompt?: string
+    model?: string
+    metadata?: Record<string, any>
   }
 
   interface History {
@@ -135,6 +149,7 @@ declare namespace Chat {
     chatId?: number
     taskId?: string
     imageUrl?: string
+    artifactReferences?: { artifactId: string; role?: string }[]
   }
 
   interface SearchAppsResponse {}

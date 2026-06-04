@@ -13,6 +13,8 @@ import { AppEntity } from '../app/app.entity';
 import { AppService } from '../app/app.service';
 import { AppCatsEntity } from '../app/appCats.entity';
 import { UserAppsEntity } from '../app/userApps.entity';
+import { ArtifactEntity } from '../artifact/artifact.entity';
+import { ArtifactService } from '../artifact/artifact.service';
 import { AutoReplyEntity } from '../autoReply/autoReply.entity';
 import { AutoReplyService } from '../autoReply/autoReply.service';
 import { BadWordsEntity } from '../badWords/badWords.entity';
@@ -50,6 +52,7 @@ import { ChatService } from './chat.service';
   imports: [
     FileWorkspaceModule,
     TypeOrmModule.forFeature([
+      ArtifactEntity,
       BalanceEntity,
       UserEntity,
       PluginEntity,
@@ -73,6 +76,7 @@ import { ChatService } from './chat.service';
   ],
   controllers: [ChatController],
   providers: [
+    ArtifactService,
     ChatService,
     UserBalanceService,
     UserService,

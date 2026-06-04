@@ -5,6 +5,7 @@ import { DatabaseService } from './database.service';
 
 // Import all entities explicitly
 import { AppEntity } from '../app/app.entity';
+import { ArtifactEntity } from '../artifact/artifact.entity';
 import { AppCatsEntity } from '../app/appCats.entity';
 import { UserAppsEntity } from '../app/userApps.entity';
 import { AutoReplyEntity } from '../autoReply/autoReply.entity';
@@ -45,6 +46,7 @@ import { VerificationEntity } from '../verification/verification.entity';
           // entities: [__dirname + '/../**/*.entity{.ts,.js}'], // <-- Remove glob pattern
           entities: [
             // <-- Use explicit array of imported classes
+            ArtifactEntity,
             Share,
             AutoReplyEntity,
             CramiEntity,

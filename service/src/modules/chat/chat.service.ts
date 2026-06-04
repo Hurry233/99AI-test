@@ -12,6 +12,7 @@ import { Request, Response } from 'express';
 import { OpenAI } from 'openai';
 import { In, Repository } from 'typeorm';
 import { OpenAIChatService } from '../aiTool/chat/chat.service';
+import { ArtifactService } from '../artifact/artifact.service';
 import { AppEntity } from '../app/app.entity';
 import { AppService } from '../app/app.service';
 import { AutoReplyService } from '../autoReply/autoReply.service';
@@ -34,6 +35,7 @@ export class ChatService {
     @InjectRepository(PluginEntity)
     private readonly pluginEntity: Repository<PluginEntity>,
     private readonly openAIChatService: OpenAIChatService,
+    private readonly artifactService: ArtifactService,
     private readonly chatLogService: ChatLogService,
     private readonly userBalanceService: UserBalanceService,
     private readonly userService: UserService,
@@ -58,6 +60,7 @@ export class ChatService {
       fileUrl,
       imageUrl,
       extraParam,
+      artifactReferences = [],
       model,
       action,
       modelName,
@@ -405,6 +408,23 @@ export class ChatService {
     const modelTimeout = (timeout || 300) * 1000;
     const temperature = Number(openaiTemperature) || 1;
     let promptReference = '';
+    let resolvedArtifactReferences = [];
+    let updatedExtraParam = extraParam || {};
+    const requestArtifactReferences = artifactReferences?.length
+      ? artifactReferences
+      : updatedExtraParam?.artifactReferences || [];
+    if (requestArtifactReferences?.length) {
+      const artifactIds = requestArtifactReferences.map(item => item.artifactId).filter(Boolean);
+      const artifacts = await this.artifactService.findByArtifactIds(artifactIds);
+      resolvedArtifactReferences = artifacts.map(artifact =>
+        this.artifactService.toResponseItem(artifact),
+      );
+      updatedExtraParam = {
+        ...updatedExtraParam,
+        artifactReferences: resolvedArtifactReferences,
+        imageEditInputs: this.artifactService.buildImageEditInputs(artifacts),
+      };
+    }
 
     if (groupId) {
       const groupInfo = await this.chatGroupService.getGroupInfoFromId(groupId);
@@ -527,7 +547,7 @@ export class ChatService {
           /* 普通对话 */
           response = await this.openAIChatService.chat(messagesHistory, {
             chatId: assistantLogId,
-            extraParam,
+            extraParam: updatedExtraParam,
             deepThinkingType,
             max_tokens: max_tokens,
             apiKey: modelKey,
@@ -619,6 +639,25 @@ export class ChatService {
             }
           }
 
+          const artifactResponseItems = await this.persistImageArtifactsFromResponse(response, {
+            prompt,
+            model: useModel,
+            sourceRunId: assistantLogId,
+            parentArtifactId: resolvedArtifactReferences[0]?.artifactId,
+            user: req.user,
+            groupId,
+          });
+
+          if (artifactResponseItems.length) {
+            response.response_items = [
+              ...(Array.isArray(response.response_items) ? response.response_items : []),
+              ...artifactResponseItems,
+            ];
+            response.imageUrl = artifactResponseItems.map(item => item.storageUrl).join(',');
+            response.full_content = this.stripInlineBase64Images(response.full_content);
+            sanitizedAnswer = this.stripInlineBase64Images(sanitizedAnswer);
+          }
+
           // 如果检测到敏感词，替换为 ***
           // gpt回答 - 使用替换后的内容存入数据库
           const finalRunTrace = {
@@ -634,6 +673,10 @@ export class ChatService {
             content: sanitizedAnswer, // 使用替换后的内容
             reasoning_content: response.full_reasoning_content,
             tool_calls: response.tool_calls,
+            imageUrl: response.imageUrl || null,
+            responseItems: response.response_items?.length
+              ? JSON.stringify(response.response_items)
+              : null,
             promptTokens: promptTokens,
             completionTokens: completionTokens,
             totalTokens: promptTokens + completionTokens,
@@ -702,6 +745,73 @@ export class ChatService {
     } finally {
       res && res.end();
     }
+  }
+
+  private async persistImageArtifactsFromResponse(response: any, context: any) {
+    const images = this.extractBase64Images(response);
+    const artifactItems = [];
+
+    for (const image of images) {
+      try {
+        const artifact = await this.artifactService.createImageArtifact({
+          base64: image.base64,
+          mimeType: image.mimeType,
+          prompt: context.prompt,
+          model: context.model,
+          sourceRunId: context.sourceRunId,
+          parentArtifactId: context.parentArtifactId,
+          user: context.user,
+          groupId: context.groupId,
+          metadata: image.metadata,
+        });
+        artifactItems.push(artifact);
+      } catch (error) {
+        Logger.error(`保存图片artifact失败: ${error.message}`, 'ChatService');
+      }
+    }
+
+    return artifactItems;
+  }
+
+  private extractBase64Images(response: any) {
+    const images = [];
+    const pushImage = (base64?: string, mimeType = 'image/png', metadata = {}) => {
+      if (!base64 || typeof base64 !== 'string') return;
+      if (base64.startsWith('http://') || base64.startsWith('https://')) return;
+      const clean = base64.includes('base64,') ? base64 : base64.trim();
+      if (clean.length < 128) return;
+      images.push({ base64: clean, mimeType, metadata });
+    };
+
+    const scan = (value: any, path = '') => {
+      if (!value) return;
+      if (typeof value === 'string') {
+        const matches =
+          value.match(/data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=\r\n]+)/g) || [];
+        matches.forEach(match => pushImage(match, undefined, { path }));
+        return;
+      }
+      if (Array.isArray(value)) {
+        value.forEach((item, index) => scan(item, `${path}[${index}]`));
+        return;
+      }
+      if (typeof value === 'object') {
+        const mimeType = value.mime_type || value.mimeType || value.media_type || 'image/png';
+        pushImage(value.b64_json, mimeType, { path, field: 'b64_json' });
+        pushImage(value.image_base64, mimeType, { path, field: 'image_base64' });
+        if (value.type === 'output_image' || value.type === 'image_generation_call') {
+          pushImage(value.data || value.result, mimeType, { path, type: value.type });
+        }
+        Object.keys(value).forEach(key => scan(value[key], path ? `${path}.${key}` : key));
+      }
+    };
+
+    scan(response?.response_items || response?.output || response?.data || response?.full_content);
+    return images;
+  }
+
+  private stripInlineBase64Images(content = '') {
+    return content.replace(/!\[[^\]]*\]\(data:image\/[a-zA-Z0-9.+-]+;base64,[^)]+\)/g, '').trim();
   }
 
   async updateChatTitle(groupId, groupInfo, modelType, prompt, req) {
