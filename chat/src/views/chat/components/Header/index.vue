@@ -1,5 +1,5 @@
 <script lang="ts" setup>
-import { fetchQueryOneCatAPI } from '@/api/appStore'
+import { fetchQueryOneAgentAPI } from '@/api/agent'
 import { fetchUpdateGroupAPI } from '@/api/group'
 import { fetchQueryModelsListAPI } from '@/api/models'
 import { DropdownMenu } from '@/components/common/DropdownMenu'
@@ -89,7 +89,7 @@ function checkMode() {
 }
 
 const activeModel = computed(() => String(configObj?.value?.modelInfo?.model ?? ''))
-/* 当前对话组是否是应用 */
+/* 当前对话组是否是 Agent */
 const activeAppId = computed(() => activeGroupInfo?.value?.appId || 0)
 
 let modelMapsCache: any = ref({})
@@ -106,7 +106,7 @@ watch(
 
 /* 查询当前app详情提示用户使用 */
 async function queryAppDetail(id: number) {
-  const res: any = await fetchQueryOneCatAPI({ id })
+  const res: any = await fetchQueryOneAgentAPI({ id })
   appDetail.value = res.data
 }
 
