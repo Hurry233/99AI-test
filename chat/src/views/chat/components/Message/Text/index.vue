@@ -3,6 +3,11 @@ import { fetchTtsAPIProcess } from '@/api'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { t } from '@/locales'
 import { useAuthStore, useGlobalStoreWithOut } from '@/store'
+import {
+  normalizeResponseItems,
+  responseItemsFromLegacy,
+  type ResponseItem,
+} from '@/utils/agentResponse'
 import { copyText } from '@/utils/format'
 import { message } from '@/utils/message'
 import {
@@ -92,6 +97,12 @@ interface Props {
   networkSearchResult?: string
   fileVectorResult?: string
   tool_calls?: string
+  responseItems?: ResponseItem[] | string
+  artifacts?: any[] | string
+  attachments?: any[] | string
+  runId?: string
+  traceStatus?: string
+  toolSummary?: string
   isLast?: boolean
   usingNetwork?: boolean
   usingDeepThinking?: boolean
@@ -141,7 +152,21 @@ const onOpenImagePreviewer =
 const isHideTts = computed(() => Number(authStore.globalConfig?.isHideTts) === 1)
 const enableHtmlRender = computed(() => Number(authStore.globalConfig?.enableHtmlRender) !== 0)
 
+const normalizedResponseItems = computed(() => {
+  const direct = normalizeResponseItems(props.responseItems as any)
+  return direct.length ? direct : responseItemsFromLegacy(props as any)
+})
+
 const searchResult = computed(() => {
+  const toolResult = normalizedResponseItems.value.find(
+    item => item.type === 'tool_result' && (item as any).name === 'network_search'
+  ) as any
+  if (toolResult?.output) {
+    const parsedData = Array.isArray(toolResult.output)
+      ? toolResult.output
+      : toolResult.output?.searchResults
+    if (Array.isArray(parsedData)) return parsedData.slice(0, 50)
+  }
   if (props.networkSearchResult) {
     try {
       const parsedData = JSON.parse(props.networkSearchResult)
@@ -421,6 +446,18 @@ mdi.renderer.rules.image = function (tokens, idx, options, env, self) {
 }
 
 const imageUrlArray = computed(() => {
+  const attachmentUrls = normalizedResponseItems.value
+    .flatMap((item: any) => {
+      const attachments = item.type === 'artifact' ? item.artifact?.attachments : item.attachments
+      return Array.isArray(attachments)
+        ? attachments
+            .filter((attachment: any) => attachment.type === 'image')
+            .map((attachment: any) => attachment.url)
+        : []
+    })
+    .filter(Boolean)
+  if (attachmentUrls.length) return attachmentUrls
+
   const val = props.imageUrl
   if (!val) return []
   // 支持 JSON 字符串格式 {"imageUrls":[...]}
