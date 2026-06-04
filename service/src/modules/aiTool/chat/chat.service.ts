@@ -4,6 +4,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
 import { GlobalConfigService } from '../../globalConfig/globalConfig.service';
 import { NetSearchService } from '../search/netSearch.service';
+import { ToolRegistryService } from '../search/tool-registry.service';
+import { AgentRunService } from './agent-run.service';
 // 引入其他需要的模块或服务
 
 @Injectable()
@@ -11,6 +13,8 @@ export class OpenAIChatService {
   constructor(
     private readonly globalConfigService: GlobalConfigService,
     private readonly netSearchService: NetSearchService,
+    private readonly agentRunService: AgentRunService,
+    private readonly toolRegistryService: ToolRegistryService,
   ) {}
 
   /**
@@ -524,20 +528,69 @@ export class OpenAIChatService {
       full_reasoning_content: '',
       networkSearchResult: '',
       fileVectorResult: '',
+      response_items: [],
+      searchTrace: null,
+      run_status: 'ok',
+      degradedReason: '',
       finishReason: null,
     };
 
     try {
-      // 步骤1: 处理网络搜索 - 使用NetSearchService
-      const { searchResults, images } = await this.netSearchService.processNetSearch(
+      // 步骤1: 自动判定是否需要网络搜索，并使用统一的 web_search 工具输出结构。
+      const searchDecision = this.agentRunService.decideSearch(prompt || '', usingNetwork);
+      const webSearchTool = this.toolRegistryService.getTool('web_search');
+      result.searchDecision = searchDecision;
+      result.webSearchTool = webSearchTool;
+
+      if (searchDecision.disabledByUser && searchDecision.forced) {
+        result.run_status = 'degraded';
+        result.degradedReason = searchDecision.reason;
+        onProgress?.({
+          run_status: result.run_status,
+          degradedReason: result.degradedReason,
+        } as any);
+        result.tool_calls = JSON.stringify({
+          searchDecision,
+          searchTrace: {
+            query: prompt || '',
+            latencyMs: 0,
+            sourceCount: 0,
+            finalCitationUrls: [],
+            failureReason: searchDecision.reason,
+          },
+        });
+        onDatabase?.({
+          run_status: result.run_status,
+          degradedReason: result.degradedReason,
+          searchTrace: {
+            query: prompt || '',
+            latencyMs: 0,
+            sourceCount: 0,
+            finalCitationUrls: [],
+            failureReason: searchDecision.reason,
+          },
+        });
+      }
+
+      const searchResponse = await this.netSearchService.processNetSearch(
         prompt || '',
         {
-          usingNetwork,
+          usingNetwork: searchDecision.shouldSearch,
           onProgress,
           onDatabase,
         },
         result,
       );
+      const { searchResults, images } = searchResponse;
+
+      if (searchDecision.shouldSearch && searchResponse.error) {
+        result.run_status = 'degraded';
+        result.degradedReason = `搜索失败，已在缺少最新检索证据的情况下继续回答：${searchResponse.error}`;
+        onProgress?.({
+          run_status: result.run_status,
+          degradedReason: result.degradedReason,
+        } as any);
+      }
 
       // 步骤5: 处理深度思考
       const shouldEndRequest = await this.handleDeepThinking(
@@ -582,6 +635,34 @@ export class OpenAIChatService {
         },
         result,
       );
+
+      if (searchResults.length > 0) {
+        const citedContent = this.agentRunService.appendCitationGuard(
+          result.full_content,
+          searchResults,
+        );
+        if (citedContent !== result.full_content) {
+          const appended = citedContent.slice(result.full_content.length);
+          result.full_content = citedContent;
+          result.content = [
+            {
+              type: 'text',
+              text: appended,
+            },
+          ];
+          onProgress?.({
+            content: result.content,
+          });
+        }
+      } else if (searchDecision.shouldSearch) {
+        result.run_status = 'degraded';
+        result.degradedReason =
+          result.degradedReason || '搜索未返回可引用来源，已降级为无实时来源回答。';
+        onProgress?.({
+          run_status: result.run_status,
+          degradedReason: result.degradedReason,
+        } as any);
+      }
 
       result.content = [
         {

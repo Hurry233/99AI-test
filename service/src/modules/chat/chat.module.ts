@@ -1,7 +1,9 @@
 import { Global, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AgentRunService } from '../aiTool/chat/agent-run.service';
 import { OpenAIChatService } from '../aiTool/chat/chat.service';
 import { NetSearchService } from '../aiTool/search/netSearch.service';
+import { ToolRegistryService } from '../aiTool/search/tool-registry.service';
 import { AppEntity } from '../app/app.entity';
 import { AppService } from '../app/app.service';
 import { AppCatsEntity } from '../app/appCats.entity';
@@ -77,7 +79,9 @@ import { ChatService } from './chat.service';
     ChatGroupService,
     ModelsService,
     OpenAIChatService,
+    AgentRunService,
     NetSearchService,
+    ToolRegistryService,
     AppService,
   ],
   exports: [ChatService],
