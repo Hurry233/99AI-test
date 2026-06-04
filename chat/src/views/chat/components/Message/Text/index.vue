@@ -122,6 +122,7 @@ const emit = defineEmits<Emit>()
 
 const showThinking = ref(true)
 const showSearchResult = ref(false)
+const showFileReferences = ref(true)
 const textRef = ref<HTMLElement>()
 const localTtsUrl = ref(props.ttsUrl)
 const playbackState = ref('paused')
@@ -153,6 +154,33 @@ const searchResult = computed(() => {
   }
   return []
 })
+
+const fileReferences = computed(() => {
+  if (!props.fileVectorResult) return []
+  try {
+    const parsedData = JSON.parse(props.fileVectorResult)
+    return Array.isArray(parsedData) ? parsedData.slice(0, 20) : []
+  } catch (e) {
+    console.error('解析 fileVectorResult 时出错', e)
+    return []
+  }
+})
+
+const referenceLabel = (item: any) => {
+  const locator = item?.locator || {}
+  const parts = []
+  if (locator.pageNumber) parts.push(`第 ${locator.pageNumber} 页`)
+  if (locator.sheetName) parts.push(`Sheet: ${locator.sheetName}`)
+  if (locator.address) parts.push(`单元格 ${locator.address}`)
+  else if (locator.rowIndex && locator.columnIndex)
+    parts.push(`R${locator.rowIndex}C${locator.columnIndex}`)
+  if (locator.paragraphId) parts.push(`段落 ${locator.paragraphId}`)
+  return parts.join(' · ') || item.type || '引用位置'
+}
+
+const jumpToReference = (item: any) => {
+  if (item?.originalUrl) window.open(item.originalUrl, '_blank')
+}
 
 const buttonGroupClass = computed(() => {
   return playbackState.value !== 'paused' || isEditable.value
@@ -1108,6 +1136,39 @@ function openSingleImagePreview(src: string) {
           style="max-width: 100%"
         />
       </div>
+    </div>
+
+    <!-- 文件引用卡片 -->
+    <div v-if="!isUserMessage && fileReferences.length" class="mt-3 w-full">
+      <div
+        class="text-gray-600 mb-2 cursor-pointer items-center btn-pill"
+        @click="showFileReferences = !showFileReferences"
+      >
+        <span>文件引用 {{ fileReferences.length }} 条</span>
+        <Down v-if="!showFileReferences" size="18" class="ml-1 flex" />
+        <Up v-else size="18" class="ml-1 flex" />
+      </div>
+      <transition name="fold">
+        <div v-if="showFileReferences" class="grid gap-2 sm:grid-cols-2">
+          <button
+            v-for="(item, index) in fileReferences"
+            :key="`${item.fileId}-${index}`"
+            type="button"
+            class="text-left rounded-xl border border-gray-200 dark:border-gray-700 p-3 bg-white/70 dark:bg-gray-800/70 hover:border-gray-400 dark:hover:border-gray-500 transition-colors"
+            @click="jumpToReference(item)"
+          >
+            <div class="text-xs text-gray-500 dark:text-gray-400 truncate">
+              {{ item.fileName || item.fileId }}
+            </div>
+            <div class="text-xs text-blue-600 dark:text-blue-300 mt-1">
+              {{ referenceLabel(item) }}
+            </div>
+            <div class="text-sm text-gray-700 dark:text-gray-300 mt-2 line-clamp-2">
+              {{ item.content }}
+            </div>
+          </button>
+        </div>
+      </transition>
     </div>
 
     <!-- 图片显示部分 -->

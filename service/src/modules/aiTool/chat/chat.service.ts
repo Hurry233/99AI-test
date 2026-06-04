@@ -2,6 +2,7 @@ import { handleError } from '@/common/utils';
 import { correctApiBaseUrl } from '@/common/utils/correctApiBaseUrl';
 import { Injectable, Logger } from '@nestjs/common';
 import OpenAI from 'openai';
+import { FileWorkspaceService } from '../../fileWorkspace/fileWorkspace.service';
 import { GlobalConfigService } from '../../globalConfig/globalConfig.service';
 import { NetSearchService } from '../search/netSearch.service';
 // 引入其他需要的模块或服务
@@ -11,6 +12,7 @@ export class OpenAIChatService {
   constructor(
     private readonly globalConfigService: GlobalConfigService,
     private readonly netSearchService: NetSearchService,
+    private readonly fileWorkspaceService: FileWorkspaceService,
   ) {}
 
   /**
@@ -466,6 +468,8 @@ export class OpenAIChatService {
       isFileUpload: any;
       isImageUpload?: any;
       fileUrl?: any;
+      userId?: number;
+      sessionId?: string;
       usingNetwork?: boolean;
       timeout: any;
       proxyUrl: any;
@@ -504,15 +508,15 @@ export class OpenAIChatService {
       usingDeepThinking,
       usingNetwork,
       extraParam,
+      fileUrl,
+      userId,
+      sessionId,
       deepThinkingType,
       onProgress,
       onFailure,
       onDatabase,
       abortController,
     } = inputs;
-
-    // 创建原始消息历史的副本
-    const originalMessagesHistory = JSON.parse(JSON.stringify(messagesHistory));
 
     const result: any = {
       chatId,
@@ -538,6 +542,28 @@ export class OpenAIChatService {
         },
         result,
       );
+
+      const fileSearchResults = await this.fileWorkspaceService.buildSearchContext(
+        prompt || '',
+        fileUrl,
+        userId,
+        sessionId,
+      );
+      if (fileSearchResults.length > 0) {
+        result.fileVectorResult = JSON.stringify(fileSearchResults);
+        onProgress?.({ fileVectorResult: result.fileVectorResult } as any);
+        onDatabase?.({ fileVectorResult: result.fileVectorResult });
+      }
+
+      if (fileSearchResults.length > 0) {
+        const filePrompt = `
+
+以下是 file_search 工具返回的文件引用片段，回答中应引用文件名、页码、sheet、行列或段落ID：
+${JSON.stringify(fileSearchResults, null, 2)}`;
+        const systemIndex = messagesHistory.findIndex((msg: any) => msg.role === 'system');
+        if (systemIndex >= 0) messagesHistory[systemIndex].content += filePrompt;
+        else messagesHistory.unshift({ role: 'system', content: filePrompt });
+      }
 
       // 步骤5: 处理深度思考
       const shouldEndRequest = await this.handleDeepThinking(
@@ -566,7 +592,7 @@ export class OpenAIChatService {
 
       // 步骤6: 处理常规响应
       await this.handleRegularResponse(
-        originalMessagesHistory,
+        messagesHistory,
         {
           apiKey,
           model,

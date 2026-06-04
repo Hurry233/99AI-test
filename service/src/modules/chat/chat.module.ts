@@ -16,6 +16,7 @@ import { ChatGroupService } from '../chatGroup/chatGroup.service';
 import { ChatLogEntity } from '../chatLog/chatLog.entity';
 import { ChatLogService } from '../chatLog/chatLog.service';
 import { CramiPackageEntity } from '../crami/cramiPackage.entity';
+import { FileWorkspaceModule } from '../fileWorkspace/fileWorkspace.module';
 import { ConfigEntity } from '../globalConfig/config.entity';
 import { GlobalConfigService } from '../globalConfig/globalConfig.service';
 import { MailerService } from '../mailer/mailer.service';
@@ -39,6 +40,7 @@ import { ChatService } from './chat.service';
 @Global()
 @Module({
   imports: [
+    FileWorkspaceModule,
     TypeOrmModule.forFeature([
       BalanceEntity,
       UserEntity,

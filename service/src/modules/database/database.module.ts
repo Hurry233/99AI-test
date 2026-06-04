@@ -14,6 +14,10 @@ import { ChatGroupEntity } from '../chatGroup/chatGroup.entity';
 import { ChatLogEntity } from '../chatLog/chatLog.entity';
 import { CramiEntity } from '../crami/crami.entity';
 import { CramiPackageEntity } from '../crami/cramiPackage.entity';
+import { DocumentChunkEntity } from '../fileWorkspace/documentChunk.entity';
+import { FileWorkspaceEntity } from '../fileWorkspace/fileWorkspace.entity';
+import { PagePreviewEntity } from '../fileWorkspace/pagePreview.entity';
+import { SheetCellEntity } from '../fileWorkspace/sheetCell.entity';
 import { ConfigEntity } from '../globalConfig/config.entity';
 import { ModelsEntity } from '../models/models.entity';
 import { OrderEntity } from '../order/order.entity';
@@ -63,6 +67,10 @@ import { VerificationEntity } from '../verification/verification.entity';
             AppCatsEntity,
             AppEntity,
             OrderEntity,
+            FileWorkspaceEntity,
+            DocumentChunkEntity,
+            SheetCellEntity,
+            PagePreviewEntity,
           ],
           synchronize: false,
           logging: false,
