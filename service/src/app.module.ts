@@ -28,6 +28,7 @@ import { SigninModule } from './modules/signin/signin.module';
 import { SpaModule } from './modules/spa/spa.module';
 import { StatisticModule } from './modules/statistic/statistic.module';
 import { TaskModule } from './modules/task/task.module';
+import { ToolModule } from './modules/tool/tool.module';
 import { UploadModule } from './modules/upload/upload.module';
 import { UserModule } from './modules/user/user.module';
 import { UserBalanceModule } from './modules/userBalance/userBalance.module';
@@ -79,6 +80,7 @@ import { VerificationModule } from './modules/verification/verification.module';
     ApplicationModule,
     CramiModule,
     UserBalanceModule,
+    ToolModule,
     ChatLogModule,
     UploadModule,
     RedisCacheModule,
