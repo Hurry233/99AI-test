@@ -19,6 +19,7 @@ import { CramiPackageEntity } from '../crami/cramiPackage.entity';
 import { ConfigEntity } from '../globalConfig/config.entity';
 import { GlobalConfigService } from '../globalConfig/globalConfig.service';
 import { MailerService } from '../mailer/mailer.service';
+import { ModelGatewayService } from '../models/model-gateway.service';
 import { ModelsEntity } from '../models/models.entity';
 import { ModelsService } from '../models/models.service';
 import { PluginEntity } from '../plugin/plugin.entity';
@@ -76,6 +77,7 @@ import { ChatService } from './chat.service';
     BadWordsService,
     ChatGroupService,
     ModelsService,
+    ModelGatewayService,
     OpenAIChatService,
     NetSearchService,
     AppService,

@@ -93,4 +93,84 @@ export class SetModelDto {
 
   @ApiProperty({ example: true, description: 'token计费比例', required: false })
   tokenFeeRatio: number;
+
+  @ApiProperty({ example: true, description: '是否支持 Responses 协议', required: false })
+  supportsResponses: boolean;
+
+  @ApiProperty({ example: true, description: '是否支持视觉输入', required: false })
+  supportsVision: boolean;
+
+  @ApiProperty({ example: true, description: '是否支持图片生成', required: false })
+  supportsImageGeneration: boolean;
+
+  @ApiProperty({ example: true, description: '是否支持工具调用', required: false })
+  supportsTools: boolean;
+
+  @ApiProperty({ example: true, description: '是否支持 JSON Schema 输出', required: false })
+  supportsJsonSchema: boolean;
+
+  @ApiProperty({ example: true, description: '是否支持推理能力', required: false })
+  supportsReasoning: boolean;
+
+  @ApiProperty({ example: true, description: '是否支持文件输入', required: false })
+  supportsFiles: boolean;
+
+  @ApiProperty({ example: 128000, description: '上下文窗口 tokens', required: false })
+  contextWindow: number;
+
+  @ApiProperty({ example: 16384, description: '最大输出 tokens', required: false })
+  maxOutputTokens: number;
+
+  @ApiProperty({
+    example: '{"input":2.5,"output":10}',
+    description: '模型价格 JSON',
+    required: false,
+  })
+  pricing: string;
+
+  @ApiProperty({ example: '{"requestsPerMinute":60}', description: '限流 JSON', required: false })
+  rateLimit: string;
+
+  @ApiProperty({ example: 'gpt-4.1-mini', description: '默认 fallback 模型', required: false })
+  defaultFallbackModel: string;
+
+  @ApiProperty({
+    example: '["web_search","mcp"]',
+    description: '工具允许列表 JSON',
+    required: false,
+  })
+  allowedTools: string;
+
+  @ApiProperty({ example: 4096, description: '模型最大回复 token 数', required: false })
+  max_tokens: number;
+
+  @ApiProperty({ example: true, description: '是否支持图片上传', required: false })
+  isImageUpload: number;
+
+  @ApiProperty({ example: 50, description: '模型频率限制', required: false })
+  modelLimits: number;
+
+  @ApiProperty({ example: '适合复杂任务', description: '模型描述', required: false })
+  modelDescription: string;
+
+  @ApiProperty({ example: true, description: '是否开启联网搜索', required: false })
+  isNetworkSearch: boolean;
+
+  @ApiProperty({ example: 0, description: '深度思考类型', required: false })
+  deepThinkingType: number;
+
+  @ApiProperty({ example: 1, description: '深度思考扣费系数', required: false })
+  deductDeepThink: number;
+
+  @ApiProperty({ example: true, description: '是否支持 MCP 工具', required: false })
+  isMcpTool: boolean;
+
+  @ApiProperty({ example: '', description: '模型 system 预设', required: false })
+  systemPrompt: string;
+
+  @ApiProperty({ example: 0, description: '预设类型', required: false })
+  systemPromptType: number;
+
+  @ApiProperty({ example: 0, description: '绘画类型', required: false })
+  drawingType: number;
 }

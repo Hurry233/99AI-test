@@ -19,6 +19,7 @@ import { BadWordsService } from '../badWords/badWords.service';
 import { ChatGroupService } from '../chatGroup/chatGroup.service';
 import { ChatLogService } from '../chatLog/chatLog.service';
 import { GlobalConfigService } from '../globalConfig/globalConfig.service';
+import { ModelGatewayService } from '../models/model-gateway.service';
 import { ModelsService } from '../models/models.service';
 import { PluginEntity } from '../plugin/plugin.entity';
 import { UploadService } from '../upload/upload.service';
@@ -42,6 +43,7 @@ export class ChatService {
     private readonly globalConfigService: GlobalConfigService,
     private readonly chatGroupService: ChatGroupService,
     private readonly modelsService: ModelsService,
+    private readonly modelGatewayService: ModelGatewayService,
     private readonly appService: AppService,
   ) {}
 
@@ -306,33 +308,53 @@ export class ChatService {
     if (!currentRequestModelKey) {
       Logger.debug('未找到当前模型key，切换至全局模型', 'ChatService');
       currentRequestModelKey = await this.modelsService.getCurrentModelKeyInfo(openaiBaseModel);
-      const groupInfo = await this.chatGroupService.getGroupInfoFromId(groupId);
 
-      // 假设 groupInfo.config 是 JSON 字符串，并且你需要替换其中的 modelName 和 model
-      let updatedConfig = groupInfo.config;
-      try {
-        const parsedConfig = JSON.parse(groupInfo.config);
-        if (parsedConfig.modelInfo) {
-          parsedConfig.modelInfo.modelName = currentRequestModelKey.modelName; // 替换为你需要的模型名称
-          parsedConfig.modelInfo.model = currentRequestModelKey.model; // 替换为你需要的模型
-          updatedConfig = JSON.stringify(parsedConfig);
+      if (groupId && currentRequestModelKey) {
+        const groupInfo = await this.chatGroupService.getGroupInfoFromId(groupId);
+        let updatedConfig = groupInfo.config;
+        try {
+          const parsedConfig = JSON.parse(groupInfo.config);
+          if (parsedConfig.modelInfo) {
+            parsedConfig.modelInfo.modelName = currentRequestModelKey.modelName;
+            parsedConfig.modelInfo.model = currentRequestModelKey.model;
+            updatedConfig = JSON.stringify(parsedConfig);
+          }
+        } catch (error) {
+          Logger.error('模型配置解析失败', error);
+          throw new HttpException('配置解析错误！', HttpStatus.BAD_REQUEST);
         }
-      } catch (error) {
-        Logger.error('模型配置解析失败', error);
-        throw new HttpException('配置解析错误！', HttpStatus.BAD_REQUEST);
-      }
 
-      await this.chatGroupService.update(
-        {
-          groupId,
-          title: groupInfo.title,
-          isSticky: false,
-          config: updatedConfig,
-          fileUrl: fileUrl,
-        },
-        req,
+        await this.chatGroupService.update(
+          {
+            groupId,
+            title: groupInfo.title,
+            isSticky: false,
+            config: updatedConfig,
+            fileUrl: fileUrl,
+          },
+          req,
+        );
+      }
+    }
+
+    if (!currentRequestModelKey) {
+      throw new HttpException(
+        '未找到可用模型配置，请联系管理员检查模型设置！',
+        HttpStatus.BAD_REQUEST,
       );
     }
+
+    const gatewayDecision = await this.modelGatewayService.selectForRun(currentRequestModelKey, {
+      kind:
+        Number(currentRequestModelKey?.keyType) === 2 ? 'image' : usingPluginId ? 'plugin' : 'chat',
+      requiresVision: Boolean(imageUrl),
+      requiresImageGeneration: Number(currentRequestModelKey?.keyType) === 2,
+      requiresTools: Boolean(usingMcpTool),
+      requiresReasoning: Boolean(usingDeepThinking),
+      requiresFiles: Boolean(fileUrl),
+      estimatedOutputTokens: Number(currentRequestModelKey?.max_tokens || 0),
+    });
+    currentRequestModelKey = gatewayDecision.model;
 
     const {
       deduct,
@@ -425,6 +447,7 @@ export class ChatService {
         : modelType === 2
         ? useModel
         : null,
+      runTrace: JSON.stringify(gatewayDecision.trace),
     });
     const userLogId = userSaveLog.id;
     const assistantLogId = assistantSaveLog.id;
@@ -520,6 +543,8 @@ export class ChatService {
             timeout: modelTimeout,
             proxyUrl: proxyResUrl,
             modelAvatar: modelAvatar,
+            protocol: gatewayDecision.protocol,
+            gatewayTrace: gatewayDecision.trace,
             usingDeepThinking: usingDeepThinking,
             usingMcpTool: usingMcpTool,
             isMcpTool: isMcpTool,
@@ -594,6 +619,14 @@ export class ChatService {
 
           // 如果检测到敏感词，替换为 ***
           // gpt回答 - 使用替换后的内容存入数据库
+          const finalRunTrace = {
+            ...gatewayDecision.trace,
+            promptTokens,
+            completionTokens,
+            totalTokens: promptTokens + completionTokens,
+            estimatedCost: gatewayDecision.estimatedCost,
+          };
+
           await this.chatLogService.updateChatLog(assistantLogId, {
             // imageUrl: response?.imageUrl,
             content: sanitizedAnswer, // 使用替换后的内容
@@ -602,6 +635,7 @@ export class ChatService {
             promptTokens: promptTokens,
             completionTokens: completionTokens,
             totalTokens: promptTokens + completionTokens,
+            runTrace: JSON.stringify(finalRunTrace),
             status: 3,
           });
 
